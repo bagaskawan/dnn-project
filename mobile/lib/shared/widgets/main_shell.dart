@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../features/contact/contact_page.dart';
 import '../../features/home/home_page.dart';
+import '../../features/product/product_page.dart';
 import '../../features/transaction/transaction_page.dart';
 import 'app_bottom_nav_bar.dart';
 
@@ -29,10 +31,8 @@ class _MainShellState extends State<MainShell> {
               },
             ),
             TransactionContent(),
-            // TODO: Add ProductPage
-            Center(child: Text('Product Page')),
-            // TODO: Add ContactPage
-            Center(child: Text('Contact Page')),
+            ProductContent(),
+            ContactContent(),
           ],
         ),
         // Fixed Bottom Nav (floating on top)

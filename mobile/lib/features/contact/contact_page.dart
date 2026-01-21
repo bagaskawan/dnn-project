@@ -1,37 +1,65 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/colors.dart';
-import '../home/home_view_model.dart';
-import 'detail-transaction/transaction_detail_page.dart'; // Import TransactionDetailPage
+import 'add-contact/add_contact_modal.dart';
+import 'detail-contact/contact_detail_page.dart';
 
-/// Full TransactionPage with bottom nav (for standalone use)
-class TransactionPage extends StatelessWidget {
-  const TransactionPage({super.key});
+/// Full ContactPage with bottom nav (for standalone use)
+class ContactPage extends StatelessWidget {
+  const ContactPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: TransactionContent());
+    return const Scaffold(body: ContactContent());
   }
 }
 
-/// Transaction content without bottom nav (for use in MainShell)
-class TransactionContent extends StatefulWidget {
-  const TransactionContent({super.key});
+/// Contact content without bottom nav (for use in MainShell)
+class ContactContent extends StatefulWidget {
+  const ContactContent({super.key});
 
   @override
-  State<TransactionContent> createState() => _TransactionContentState();
+  State<ContactContent> createState() => _ContactContentState();
 }
 
-class _TransactionContentState extends State<TransactionContent>
+class _ContactContentState extends State<ContactContent>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
-  int _selectedFilter = 0; // 0: Hari Ini, 1: 7 Hari, 2: 30 Hari
 
-  final List<String> _filterOptions = ['Hari Ini', '7 Hari', '30 Hari'];
-
-  // Use data from HomeViewModel structure
-  final List<Transaction> _transactions = HomeViewModel().transactions;
+  // Sample contacts
+  final List<Map<String, dynamic>> _contacts = [
+    {
+      'name': 'Toko Makmur',
+      'type': 'pelanggan',
+      'phone': '081234567890',
+      'initial': 'TM',
+    },
+    {
+      'name': 'CV. Berkah Jaya',
+      'type': 'supplier',
+      'phone': '089876543210',
+      'initial': 'BJ',
+    },
+    {
+      'name': 'Warung Sejahtera',
+      'type': 'pelanggan',
+      'phone': '085678901234',
+      'initial': 'WS',
+    },
+    {
+      'name': 'PT. Sentosa Abadi',
+      'type': 'supplier',
+      'phone': '081345678901',
+      'initial': 'SA',
+    },
+    {
+      'name': 'Kios Bahagia',
+      'type': 'pelanggan',
+      'phone': '087789012345',
+      'initial': 'KB',
+    },
+  ];
 
   @override
   void initState() {
@@ -47,25 +75,21 @@ class _TransactionContentState extends State<TransactionContent>
     super.dispose();
   }
 
-  List<Transaction> get _filteredTransactions {
-    List<Transaction> filtered = _transactions;
+  List<Map<String, dynamic>> get _filteredContacts {
+    List<Map<String, dynamic>> filtered = _contacts;
 
-    // Filter by tab (0: Pengadaan, 1: Semua, 2: Penjualan)
+    // Filter by tab (0: Supplier, 1: Semua, 2: Pelanggan)
     if (_tabController.index == 0) {
-      filtered = filtered
-          .where((t) => t.type == TransactionType.pengadaan)
-          .toList();
+      filtered = filtered.where((t) => t['type'] == 'supplier').toList();
     } else if (_tabController.index == 2) {
-      filtered = filtered
-          .where((t) => t.type == TransactionType.penjualan)
-          .toList();
+      filtered = filtered.where((t) => t['type'] == 'pelanggan').toList();
     }
 
     // Filter by search
     if (_searchController.text.isNotEmpty) {
       filtered = filtered
           .where(
-            (t) => t.name.toLowerCase().contains(
+            (t) => t['name'].toString().toLowerCase().contains(
               _searchController.text.toLowerCase(),
             ),
           )
@@ -96,8 +120,8 @@ class _TransactionContentState extends State<TransactionContent>
                 padding: const EdgeInsets.symmetric(vertical: 28),
                 child: Column(
                   children: [
-                    _buildSearchAndFilter(),
-                    Expanded(child: _buildTransactionList()),
+                    _buildSearchAndAction(),
+                    Expanded(child: _buildContactList()),
                   ],
                 ),
               ),
@@ -113,7 +137,7 @@ class _TransactionContentState extends State<TransactionContent>
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
       child: Center(
         child: Text(
-          'Transaksi',
+          'Kontak',
           style: GoogleFonts.montserrat(
             fontSize: 20,
             fontWeight: FontWeight.w800,
@@ -124,10 +148,10 @@ class _TransactionContentState extends State<TransactionContent>
     );
   }
 
-  Widget _buildSearchAndFilter() {
+  Widget _buildSearchAndAction() {
     return Column(
       children: [
-        // Search Bar with Filter Button
+        // Search Bar with Add Button
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Row(
@@ -144,7 +168,7 @@ class _TransactionContentState extends State<TransactionContent>
                     controller: _searchController,
                     onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
-                      hintText: 'Search Transaction ...',
+                      hintText: 'Cari Kontak ...',
                       hintStyle: GoogleFonts.montserrat(
                         color: Colors.grey.shade400,
                         fontSize: 14,
@@ -157,9 +181,16 @@ class _TransactionContentState extends State<TransactionContent>
                 ),
               ),
               const SizedBox(width: 12),
-              // Filter Button
+              // Add Button (replacing Filter button)
               GestureDetector(
-                onTap: _showDateFilterModal,
+                onTap: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (context) => const AddContactModal(),
+                  );
+                },
                 child: Container(
                   width: 48,
                   height: 48,
@@ -167,18 +198,14 @@ class _TransactionContentState extends State<TransactionContent>
                     color: AppColors.primary,
                     borderRadius: BorderRadius.circular(50),
                   ),
-                  child: const Icon(
-                    Icons.tune_rounded,
-                    color: Colors.white,
-                    size: 22,
-                  ),
+                  child: const Icon(Icons.add, color: Colors.white, size: 24),
                 ),
               ),
             ],
           ),
         ),
         const SizedBox(height: 16),
-        // Filter Tabs (Semua, Pengadaan, Penjualan) with sliding indicator
+        // Filter Tabs (Pelanggan, Semua, Supplier)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Container(
@@ -189,7 +216,7 @@ class _TransactionContentState extends State<TransactionContent>
             ),
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final tabWidth = constraints.maxWidth / 3; // 3 tabs
+                final tabWidth = constraints.maxWidth / 3;
                 return Stack(
                   children: [
                     // Sliding indicator
@@ -207,12 +234,12 @@ class _TransactionContentState extends State<TransactionContent>
                         ),
                       ),
                     ),
-                    // Tab labels (0: Pengadaan, 1: Semua, 2: Penjualan)
+                    // Tab labels
                     Row(
                       children: [
-                        _buildTabLabel(0, 'Pengadaan'),
+                        _buildTabLabel(0, 'Supplier'),
                         _buildTabLabel(1, 'Semua'),
-                        _buildTabLabel(2, 'Penjualan'),
+                        _buildTabLabel(2, 'Pelanggan'),
                       ],
                     ),
                   ],
@@ -228,12 +255,12 @@ class _TransactionContentState extends State<TransactionContent>
 
   Color _getTabColor(int index) {
     switch (index) {
-      case 0: // Pengadaan
-        return AppColors.boxSecondBack;
+      case 0: // Supplier
+        return AppColors.boxSecondBack; // Green-ish for Procurement/Suppliers
       case 1: // Semua
         return AppColors.primary;
-      case 2: // Penjualan
-        return AppColors.boxThird;
+      case 2: // Pelanggan
+        return AppColors.boxThird; // Red-ish for Sales/Customers
       default:
         return AppColors.primary;
     }
@@ -266,97 +293,22 @@ class _TransactionContentState extends State<TransactionContent>
     );
   }
 
-  void _showDateFilterModal() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Filter Waktu',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ..._filterOptions.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final option = entry.value;
-                  final isSelected = _selectedFilter == index;
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isSelected
-                            ? AppColors.primary
-                            : Colors.transparent,
-                        border: Border.all(
-                          color: isSelected
-                              ? AppColors.primary
-                              : Colors.grey.shade400,
-                          width: 2,
-                        ),
-                      ),
-                      child: isSelected
-                          ? const Icon(
-                              Icons.check,
-                              size: 16,
-                              color: Colors.white,
-                            )
-                          : null,
-                    ),
-                    title: Text(
-                      option,
-                      style: GoogleFonts.montserrat(
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    onTap: () {
-                      setState(() {
-                        _selectedFilter = index;
-                      });
-                      Navigator.pop(context);
-                    },
-                  );
-                }),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
+  Widget _buildContactList() {
+    final contacts = _filteredContacts;
 
-  Widget _buildTransactionList() {
-    final transactions = _filteredTransactions;
-
-    if (transactions.isEmpty) {
+    if (contacts.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.receipt_long_outlined,
+              Icons.person_off_outlined,
               size: 64,
               color: Colors.grey.shade300,
             ),
             const SizedBox(height: 16),
             Text(
-              'Tidak ada transaksi',
+              'Tidak ada kontak',
               style: GoogleFonts.montserrat(
                 fontSize: 14,
                 color: Colors.grey.shade500,
@@ -367,93 +319,69 @@ class _TransactionContentState extends State<TransactionContent>
       );
     }
 
-    // Group by date
-    final Map<String, List<Transaction>> grouped = {};
-    for (var tx in transactions) {
-      final date = tx.date;
-      final key = '${date.day} ${_getMonthName(date.month)} ${date.year}';
-      grouped.putIfAbsent(key, () => []);
-      grouped[key]!.add(tx);
-    }
-
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 100),
-      itemCount: grouped.keys.length,
+      itemCount: contacts.length,
       itemBuilder: (context, index) {
-        final dateKey = grouped.keys.elementAt(index);
-        final items = grouped[dateKey]!;
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12, top: 8),
-              child: Text(
-                dateKey,
-                style: GoogleFonts.montserrat(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ),
-            ...items.map((tx) => _buildTransactionItem(tx)),
-          ],
-        );
+        return _buildContactItem(contacts[index]);
       },
     );
   }
 
-  Widget _buildTransactionItem(Transaction tx) {
-    final isPengadaan = tx.type == TransactionType.pengadaan;
-    final color = isPengadaan ? AppColors.boxSecondBack : AppColors.boxThird;
-    final icon = isPengadaan
-        ? Icons.south_west
-        : Icons.north_east; // Pengadaan = Masuk
-    final date = tx.date;
+  Widget _buildContactItem(Map<String, dynamic> contact) {
+    final isPelanggan = contact['type'] == 'pelanggan';
+    final color = isPelanggan ? AppColors.boxThird : AppColors.boxSecondBack;
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => TransactionDetailPage(transaction: tx),
+            builder: (context) => ContactDetailPage(contact: contact),
           ),
         );
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
-        color:
-            Colors.transparent, // Ensure hit test works on empty space if any
         child: Row(
           children: [
             Container(
-              width: 30,
-              height: 30,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: color.withOpacity(0.1),
               ),
-              child: Icon(icon, size: 16, color: color),
+              child: Center(
+                child: Text(
+                  contact['initial'],
+                  style: GoogleFonts.montserrat(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+              ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    tx.name, // Display Transaction/Customer Name
+                    contact['name'],
                     style: GoogleFonts.montserrat(
-                      fontSize: 12,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: AppColors.textPrimary,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 4),
                   Text(
-                    '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
+                    contact['phone'],
                     style: GoogleFonts.montserrat(
-                      fontSize: 10,
+                      fontSize: 12,
                       fontWeight: FontWeight.w500,
                       color: Colors.grey,
                     ),
@@ -461,42 +389,24 @@ class _TransactionContentState extends State<TransactionContent>
                 ],
               ),
             ),
-            Text(
-              'Rp ${_formatNumber(tx.amount.toInt())}',
-              style: GoogleFonts.montserrat(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: color,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                isPelanggan ? 'Pelanggan' : 'Supplier',
+                style: GoogleFonts.montserrat(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
               ),
             ),
           ],
         ),
       ),
     );
-  }
-
-  String _formatNumber(int number) {
-    return number.toString().replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-      (m) => '${m[1]}.',
-    );
-  }
-
-  String _getMonthName(int month) {
-    const months = [
-      'Januari',
-      'Februari',
-      'Maret',
-      'April',
-      'Mei',
-      'Juni',
-      'Juli',
-      'Agustus',
-      'September',
-      'Oktober',
-      'November',
-      'Desember',
-    ];
-    return months[month - 1];
   }
 }

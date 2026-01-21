@@ -54,7 +54,7 @@ class AppBottomNavBar extends StatelessWidget {
               width: _itemSize,
               height: _itemSize,
               decoration: BoxDecoration(
-                color: AppColors.background,
+                color: AppColors.cardBackground,
                 shape: BoxShape.circle,
               ),
             ),

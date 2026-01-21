@@ -5,17 +5,41 @@ enum TransactionType {
   penjualan, // Sales (Red Arrow per user request)
 }
 
+class TransactionItem {
+  final String name;
+  final int quantity;
+  final String unit; // e.g., "Kg", "Bal"
+  final int price;
+  final String? conversionNote; // e.g., "Setara dengan ≈ 60 Pcs di stok"
+
+  TransactionItem({
+    required this.name,
+    required this.quantity,
+    required this.unit,
+    required this.price,
+    this.conversionNote,
+  });
+
+  int get subtotal => quantity * price;
+}
+
 class Transaction {
   final String name; // Store/Consumer Name
   final DateTime date; // Transaction time
   final double amount; // Nominal
   final TransactionType type;
+  final String invoiceNumber;
+  final String paymentMethod;
+  final List<TransactionItem> items;
 
   Transaction({
     required this.name,
     required this.date,
     required this.amount,
     required this.type,
+    required this.invoiceNumber,
+    required this.paymentMethod,
+    required this.items,
   });
 }
 
@@ -134,90 +158,83 @@ class HomeViewModel extends ChangeNotifier {
       date: DateTime.now().subtract(const Duration(hours: 2)),
       amount: 1500000,
       type: TransactionType.pengadaan,
+      invoiceNumber: "INV-20260121-001",
+      paymentMethod: "Transfer Bank (Lunas)",
+      items: [
+        TransactionItem(
+          name: "Keripik Singkong Balado",
+          quantity: 3,
+          unit: "Bal",
+          price: 500000,
+          conversionNote: "Setara dengan ≈ 60 Pcs di stok",
+        ),
+      ],
     ),
     Transaction(
       name: "Budi Santoso",
       date: DateTime.now().subtract(const Duration(hours: 4)),
       amount: 350000,
       type: TransactionType.penjualan,
+      invoiceNumber: "INV-20260121-002",
+      paymentMethod: "Tunai",
+      items: [
+        TransactionItem(
+          name: "Alpukat Mentega Super",
+          quantity: 10,
+          unit: "Kg",
+          price: 35000,
+        ),
+      ],
     ),
     Transaction(
       name: "CV. Mitra Abadi",
       date: DateTime.now().subtract(const Duration(hours: 5)),
       amount: 2100000,
       type: TransactionType.pengadaan,
+      invoiceNumber: "INV-20260121-003",
+      paymentMethod: "Transfer Bank",
+      items: [
+        TransactionItem(
+          name: "Minyak Goreng Tropical",
+          quantity: 5,
+          unit: "Karton",
+          price: 220000,
+        ),
+        TransactionItem(
+          name: "Gula Pasir Gulaku",
+          quantity: 2,
+          unit: "Karung 50kg",
+          price: 500000,
+        ),
+      ],
     ),
+    // Simplified remaining transactions for brevity
     Transaction(
       name: "Siti Aminah",
       date: DateTime.now().subtract(const Duration(days: 1, hours: 1)),
       amount: 125000,
       type: TransactionType.penjualan,
+      invoiceNumber: "INV-20260120-001",
+      paymentMethod: "Tunai",
+      items: [],
     ),
     Transaction(
       name: "UD. Sumber Rejeki",
       date: DateTime.now().subtract(const Duration(days: 1, hours: 3)),
       amount: 850000,
       type: TransactionType.pengadaan,
+      invoiceNumber: "INV-20260120-002",
+      paymentMethod: "Transfer Bank",
+      items: [],
     ),
     Transaction(
       name: "Warung Bu Dewi",
       date: DateTime.now().subtract(const Duration(days: 1, hours: 6)),
       amount: 450000,
       type: TransactionType.penjualan,
-    ),
-    Transaction(
-      name: "Ahmad Rizky",
-      date: DateTime.now().subtract(const Duration(days: 2, hours: 2)),
-      amount: 75000,
-      type: TransactionType.penjualan,
-    ),
-    Transaction(
-      name: "PT. Global Textil",
-      date: DateTime.now().subtract(const Duration(days: 2, hours: 5)),
-      amount: 3200000,
-      type: TransactionType.pengadaan,
-    ),
-    Transaction(
-      name: "Lina Marlina",
-      date: DateTime.now().subtract(const Duration(days: 3, hours: 4)),
-      amount: 200000,
-      type: TransactionType.penjualan,
-    ),
-    Transaction(
-      name: "Toko Serba Ada",
-      date: DateTime.now().subtract(const Duration(days: 3, hours: 8)),
-      amount: 550000,
-      type: TransactionType.pengadaan,
-    ),
-    Transaction(
-      name: "Doni Pratama",
-      date: DateTime.now().subtract(const Duration(days: 4, hours: 1)),
-      amount: 180000,
-      type: TransactionType.penjualan,
-    ),
-    Transaction(
-      name: "Supplier Kain Murah",
-      date: DateTime.now().subtract(const Duration(days: 4, hours: 5)),
-      amount: 950000,
-      type: TransactionType.pengadaan,
-    ),
-    Transaction(
-      name: "Cafe Kopi Senja",
-      date: DateTime.now().subtract(const Duration(days: 5, hours: 2)),
-      amount: 600000,
-      type: TransactionType.penjualan,
-    ),
-    Transaction(
-      name: "Toko Kelontong Maju",
-      date: DateTime.now().subtract(const Duration(days: 5, hours: 6)),
-      amount: 1200000,
-      type: TransactionType.pengadaan,
-    ),
-    Transaction(
-      name: "Rina Wati",
-      date: DateTime.now().subtract(const Duration(days: 6, hours: 3)),
-      amount: 95000,
-      type: TransactionType.penjualan,
+      invoiceNumber: "INV-20260120-003",
+      paymentMethod: "Tunai",
+      items: [],
     ),
   ];
 
