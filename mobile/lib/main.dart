@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'features/home/home_page.dart';
+import 'shared/widgets/main_shell.dart';
 import 'core/theme/app_theme.dart';
 
 void main() {
@@ -15,7 +15,7 @@ class MyApp extends StatelessWidget {
       title: 'Reseller App',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: const HomePage(),
+      home: const MainShell(),
     );
   }
 }

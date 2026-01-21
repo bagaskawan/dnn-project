@@ -5,14 +5,27 @@ import '../../features/buy/buy_page.dart';
 import '../../features/sale/sale_page.dart';
 import 'home_view_model.dart';
 
-class HomePage extends StatefulWidget {
+/// Full HomePage with bottom nav (for standalone use)
+class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  Widget build(BuildContext context) {
+    return const Scaffold(body: HomeContent());
+  }
 }
 
-class _HomePageState extends State<HomePage> {
+/// Home content without bottom nav (for use in MainShell)
+class HomeContent extends StatefulWidget {
+  final VoidCallback? onViewAllTransactionsTap;
+
+  const HomeContent({super.key, this.onViewAllTransactionsTap});
+
+  @override
+  State<HomeContent> createState() => _HomeContentState();
+}
+
+class _HomeContentState extends State<HomeContent> {
   final HomeViewModel _viewModel = HomeViewModel();
 
   @override
@@ -24,42 +37,30 @@ class _HomePageState extends State<HomePage> {
           backgroundColor: AppColors.background,
           body: SafeArea(
             bottom: false,
-            child: Stack(
-              fit: StackFit.expand,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 16),
-                    // Header
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: _buildHeader(),
-                    ),
-                    const SizedBox(height: 36),
-                    // Balance Section
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: _buildBalanceSection(),
-                    ),
-                    const SizedBox(height: 32),
-                    // Action Buttons
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: _buildActionButtons(),
-                    ),
-                    const SizedBox(height: 32),
-                    // Portfolio/Transaction Section expanding to bottom
-                    Expanded(child: _buildPortfolioSection()),
-                  ],
+                const SizedBox(height: 16),
+                // Header
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: _buildHeader(),
                 ),
-                // Floating Bottom Nav
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 30,
-                  child: Center(child: _buildBottomNavBar()),
+                const SizedBox(height: 36),
+                // Balance Section
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: _buildBalanceSection(),
                 ),
+                const SizedBox(height: 32),
+                // Action Buttons
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: _buildActionButtons(),
+                ),
+                const SizedBox(height: 32),
+                // Portfolio/Transaction Section expanding to bottom
+                Expanded(child: _buildPortfolioSection()),
               ],
             ),
           ),
@@ -76,7 +77,7 @@ class _HomePageState extends State<HomePage> {
         Text(
           _viewModel.greeting,
           style: GoogleFonts.montserrat(
-            fontSize: 20,
+            fontSize: 16,
             fontWeight: FontWeight.w800,
             color: AppColors.textPrimary,
           ),
@@ -84,8 +85,8 @@ class _HomePageState extends State<HomePage> {
         const Spacer(),
         // Notification Icon
         Container(
-          width: 48,
-          height: 48,
+          width: 36,
+          height: 36,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.white,
@@ -101,7 +102,30 @@ class _HomePageState extends State<HomePage> {
           child: const Icon(
             Icons.notifications_outlined,
             color: AppColors.textPrimary,
-            size: 24,
+            size: 20,
+          ),
+        ),
+        const SizedBox(width: 12),
+        // Account Icon
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white,
+            border: Border.all(color: Colors.white, width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.person_outline,
+            color: AppColors.textPrimary,
+            size: 20,
           ),
         ),
       ],
@@ -267,12 +291,15 @@ class _HomePageState extends State<HomePage> {
                   color: AppColors.textPrimary,
                 ),
               ),
-              Text(
-                'View All',
-                style: GoogleFonts.montserrat(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w400,
-                  color: AppColors.textPrimary,
+              GestureDetector(
+                onTap: widget.onViewAllTransactionsTap,
+                child: Text(
+                  'View All',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
             ],
@@ -520,59 +547,6 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildBottomNavBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(40),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Home (Selected)
-          Container(
-            width: 50,
-            height: 50,
-            decoration: const BoxDecoration(
-              color: AppColors.background,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.home, color: Colors.black),
-          ),
-          const SizedBox(width: 8),
-          _buildNavIcon(Icons.description_outlined),
-          const SizedBox(width: 8),
-          _buildNavIcon(Icons.compare_arrows),
-          const SizedBox(width: 8),
-          _buildNavIcon(Icons.access_time),
-          const SizedBox(width: 8),
-          _buildNavIcon(Icons.person_outline),
-          const SizedBox(width: 8),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavIcon(IconData icon) {
-    return Container(
-      width: 50,
-      height: 50,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.transparent,
-      ),
-      child: Icon(icon, color: Colors.white54),
     );
   }
 }

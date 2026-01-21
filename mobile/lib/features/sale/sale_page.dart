@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/colors.dart';
+import 'form-sale/sale_form_page.dart';
 
 class SalePage extends StatefulWidget {
   const SalePage({super.key});
@@ -28,6 +29,53 @@ class _SalePageState extends State<SalePage> {
 
   void _onTextChanged() {
     setState(() {});
+  }
+
+  Future<void> _openSaleForm() async {
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(builder: (context) => const SaleFormPage()),
+    );
+
+    if (result != null && mounted) {
+      // Build user message from sale data
+      final customer = result['customer'] ?? 'Pelanggan Umum';
+      final summary = result['summary'] ?? '';
+      final total = result['total'] ?? 0.0;
+
+      final userMessage =
+          '📝 Penjualan ke $customer:\n$summary\nTotal: Rp ${_formatNumber(total.toInt())}';
+
+      setState(() {
+        // Remove typing indicator
+        _chatItems.removeWhere((item) => item['type'] == 'typing');
+        // Add user message
+        _chatItems.add({'type': 'user_pill', 'text': userMessage});
+        // Add typing indicator
+        _chatItems.add({'type': 'typing'});
+      });
+
+      // Simulate AI response after delay
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) {
+        setState(() {
+          _chatItems.removeWhere((item) => item['type'] == 'typing');
+          _chatItems.add({
+            'type': 'system_text',
+            'text':
+                'Mantap, Bos! 🎉\n\nPenjualan ke $customer sudah saya catat. Total Rp ${_formatNumber(total.toInt())} sudah masuk ke rekap harian.\n\nAda transaksi lain?',
+          });
+          _chatItems.add({'type': 'typing'});
+        });
+      }
+    }
+  }
+
+  String _formatNumber(int number) {
+    return number.toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (m) => '${m[1]}.',
+    );
   }
 
   // Using a dynamic list to represent different types of chat items
@@ -352,7 +400,7 @@ class _SalePageState extends State<SalePage> {
                     size: 20,
                   ),
                   onPressed: () {
-                    // TODO: Implement form logic
+                    _openSaleForm();
                   },
                 ),
               ),
