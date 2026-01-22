@@ -40,7 +40,12 @@ class Transaction {
     required this.invoiceNumber,
     required this.paymentMethod,
     required this.items,
+    this.customerPhone = "081234567890", // Default mock value
+    this.customerAddress = "Jl. Merdeka No. 123", // Default mock value
   });
+
+  final String customerPhone;
+  final String customerAddress;
 }
 
 class QuickTransferContact {
@@ -169,6 +174,8 @@ class HomeViewModel extends ChangeNotifier {
           conversionNote: "Setara dengan ≈ 60 Pcs di stok",
         ),
       ],
+      customerPhone: "0812-3333-4444",
+      customerAddress: "Jl. Pasar Lama No. 88, Jakarta Selatan",
     ),
     Transaction(
       name: "Budi Santoso",
@@ -185,6 +192,8 @@ class HomeViewModel extends ChangeNotifier {
           price: 35000,
         ),
       ],
+      customerPhone: "0819-8888-7777",
+      customerAddress: "Perumahan Indah Permai Blok A3, Bekasi",
     ),
     Transaction(
       name: "CV. Mitra Abadi",
@@ -207,8 +216,9 @@ class HomeViewModel extends ChangeNotifier {
           price: 500000,
         ),
       ],
+      customerPhone: "021-555-6789",
+      customerAddress: "Kawasan Industri Pulo Gadung, Jakarta Timur",
     ),
-    // Simplified remaining transactions for brevity
     Transaction(
       name: "Siti Aminah",
       date: DateTime.now().subtract(const Duration(days: 1, hours: 1)),
@@ -217,6 +227,8 @@ class HomeViewModel extends ChangeNotifier {
       invoiceNumber: "INV-20260120-001",
       paymentMethod: "Tunai",
       items: [],
+      customerPhone: "0856-9999-0000",
+      customerAddress: "Komplek Melati Indah C4, Depok",
     ),
     Transaction(
       name: "UD. Sumber Rejeki",
@@ -226,6 +238,8 @@ class HomeViewModel extends ChangeNotifier {
       invoiceNumber: "INV-20260120-002",
       paymentMethod: "Transfer Bank",
       items: [],
+      customerPhone: "0813-1234-5678",
+      customerAddress: "Jl. Raya Bogor KM 30",
     ),
     Transaction(
       name: "Warung Bu Dewi",
@@ -235,6 +249,8 @@ class HomeViewModel extends ChangeNotifier {
       invoiceNumber: "INV-20260120-003",
       paymentMethod: "Tunai",
       items: [],
+      customerPhone: "0878-1111-2222",
+      customerAddress: "Jl. Cempaka Putih Tengah, Jakarta Pusat",
     ),
   ];
 

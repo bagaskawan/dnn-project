@@ -24,32 +24,20 @@ class TransactionDetailPage extends StatelessWidget {
     final statusIcon = isPengadaan ? Icons.arrow_downward : Icons.arrow_upward;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFE9F2F2), // Soft light greenish-grey
+      backgroundColor: AppColors.background,
       appBar: AppBar(
+        centerTitle: true,
         title: Text(
-          'Transaction Detail',
+          'Detail Transaksi',
           style: GoogleFonts.montserrat(
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: AppColors.textPrimary,
           ),
         ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.more_horiz, color: AppColors.textPrimary),
-            onPressed: () {},
-          ),
-        ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         child: Column(
           children: [
             // Floating Receipt Card
@@ -152,56 +140,35 @@ class TransactionDetailPage extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.storefront,
-                                    size: 18,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    transaction.name,
-                                    style: GoogleFonts.inter(
-                                      color: const Color(0xFF1A1A1A),
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
+
+                              GestureDetector(
+                                onTap: () => _showCustomerContactModal(context),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.storefront,
+                                      size: 18,
+                                      color: Colors.grey.shade600,
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      transaction.name,
+                                      style: GoogleFonts.inter(
+                                        color: const Color(0xFF1A1A1A),
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.info_outline,
+                                      size: 14,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF3F4F6),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.pink.shade50,
-                              ), // Subtle pink border matching design hint
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.auto_awesome,
-                                  size: 12,
-                                  color: Colors.red.shade300,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'AI Scan Input',
-                                  style: GoogleFonts.inter(
-                                    color: Colors.red.shade400,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
                           ),
                         ],
                       ),
@@ -330,13 +297,29 @@ class TransactionDetailPage extends StatelessWidget {
             ),
 
             const SizedBox(height: 32),
-            Text(
-              "Terima kasih atas transaksi Anda.",
-              style: GoogleFonts.inter(
-                color: const Color(0xFF9CA3AF),
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildMenuButton(
+                  icon: Icons.ios_share,
+                  label: 'Share',
+                  color: Colors.white,
+                  iconColor: const Color(0xFF1A1A1A),
+                  onTap: () {
+                    // TODO: Implement share functionality
+                  },
+                ),
+                const SizedBox(width: 40),
+                _buildMenuButton(
+                  icon: Icons.print_rounded,
+                  label: 'Print PDF',
+                  color: const Color(0xFFEF4444),
+                  iconColor: Colors.white,
+                  onTap: () {
+                    // TODO: Implement print functionality
+                  },
+                ),
+              ],
             ),
             const SizedBox(height: 100),
           ],
@@ -365,7 +348,7 @@ class TransactionDetailPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Qty: ${item.quantity} ${item.unit} × Rp ${_formatNumber(item.price)}',
+                  '${item.quantity} ${item.unit} × Rp ${_formatNumber(item.price)}',
                   style: GoogleFonts.inter(
                     color: const Color(0xFF6B7280),
                     fontSize: 13,
@@ -461,5 +444,211 @@ class TransactionDetailPage extends StatelessWidget {
       'Dec',
     ];
     return '${date.day} ${months[date.month - 1]} ${date.year}';
+  }
+
+  void _showCustomerContactModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 24,
+            right: 24,
+            top: 24,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.storefront,
+                      color: Colors.blue.shade700,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          transaction.type == TransactionType.pengadaan
+                              ? "Supplier Info"
+                              : "Customer Info",
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: Colors.grey.shade500,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          transaction.name,
+                          style: GoogleFonts.inter(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF1A1A1A),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              const Divider(),
+              const SizedBox(height: 16),
+              _buildContactItem(
+                Icons.phone_rounded,
+                "Nomor Telepon",
+                transaction.customerPhone,
+                Colors.green.shade600,
+                bgColor: Colors.green.shade50,
+              ),
+              const SizedBox(height: 16),
+              _buildContactItem(
+                Icons.location_on_rounded,
+                "Alamat",
+                transaction.customerAddress,
+                Colors.red.shade600,
+                bgColor: Colors.red.shade50,
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: Text(
+                    "Tutup",
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildContactItem(
+    IconData icon,
+    String label,
+    String value,
+    Color iconColor, {
+    Color? bgColor,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: bgColor ?? Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, size: 20, color: iconColor),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: Colors.grey.shade500,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  color: const Color(0xFF1A1A1A),
+                  fontWeight: FontWeight.w500,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMenuButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required Color iconColor,
+    required VoidCallback onTap,
+  }) {
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 15,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Icon(icon, color: iconColor, size: 24),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            color: const Color(0xFF6B7280),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
   }
 }
