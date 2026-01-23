@@ -27,3 +27,10 @@
 .pub/
 **/build/
 mobile/build/
+
+# Backend / Python
+backend/.env
+backend/venv/
+backend/__pycache__/
+*.env
+__pycache__/
