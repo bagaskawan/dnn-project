@@ -1,28 +1,27 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import '../../models/procurement_draft.dart';
 
 class ApiService {
-  // GANTI IP INI SESUAI DEVICE KAMU!
-  // Android Emulator: 'http://10.0.2.2:8000'
-  // iOS Simulator: 'http://127.0.0.1:8000'
-  // HP Fisik: Cek IP Laptop (ipconfig/ifconfig), misal 'http://192.168.1.X:8000'
+  // Ganti dengan IP Laptop kamu seperti sebelumnya
   static const String baseUrl = 'http://10.0.2.2:8000';
 
   final Dio _dio = Dio(BaseOptions(baseUrl: baseUrl));
 
-  // 1. Kirim Chat Teks dengan context draft saat ini
+  // 1. Kirim Chat Teks dengan Context Draft
   Future<ProcurementDraft?> parseText(
-    String text, {
+    String message,
     ProcurementDraft? currentDraft,
-  }) async {
+  ) async {
     try {
-      final data = {
-        'text': text,
-        if (currentDraft != null) 'current_draft': currentDraft.toJson(),
-      };
-
-      final response = await _dio.post('/api/v1/parse/text', data: data);
+      final response = await _dio.post(
+        '/api/v1/parse/text',
+        data: {
+          'new_message': message,
+          'current_draft': currentDraft?.toJson(), // Kirim state terakhir
+        },
+      );
 
       if (response.statusCode == 200) {
         return ProcurementDraft.fromJson(response.data);
@@ -34,19 +33,26 @@ class ApiService {
     }
   }
 
-  // 2. Kirim Gambar Struk
+  // 2. Kirim Gambar dengan Context Draft
   Future<ProcurementDraft?> parseImage(
-    File imageFile, {
+    File imageFile,
     ProcurementDraft? currentDraft,
-  }) async {
+  ) async {
     try {
       String fileName = imageFile.path.split('/').last;
+
+      // Kirim draft sebagai JSON String karena Multipart tidak bisa nested JSON
+      String? draftJsonStr;
+      if (currentDraft != null) {
+        draftJsonStr = jsonEncode(currentDraft.toJson());
+      }
 
       FormData formData = FormData.fromMap({
         "file": await MultipartFile.fromFile(
           imageFile.path,
           filename: fileName,
         ),
+        if (draftJsonStr != null) "current_draft_str": draftJsonStr,
       });
 
       final response = await _dio.post('/api/v1/parse/image', data: formData);

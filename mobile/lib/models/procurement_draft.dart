@@ -15,9 +15,9 @@ class ExtractedItem {
 
   factory ExtractedItem.fromJson(Map<String, dynamic> json) {
     return ExtractedItem(
-      productName: json['product_name'] ?? 'Unknown Product',
+      productName: json['product_name'] ?? '',
       qty: (json['qty'] ?? 0).toDouble(),
-      unit: json['unit'] ?? 'pcs',
+      unit: json['unit'] ?? '',
       totalPrice: (json['total_price'] ?? 0).toDouble(),
       notes: json['notes'],
     );
@@ -42,7 +42,7 @@ class ProcurementDraft {
   final double confidenceScore;
 
   ProcurementDraft({
-    this.action,
+    required this.action,
     this.supplierName,
     required this.transactionDate,
     required this.items,
@@ -57,83 +57,33 @@ class ProcurementDraft {
         .map((i) => ExtractedItem.fromJson(i))
         .toList();
 
-    var actionsList = json['suggested_actions'] as List?;
-    List<String>? suggestedActionsList = actionsList
-        ?.map((a) => a.toString())
-        .toList();
+    var actionsJson = json['suggested_actions'];
+    List<String>? actionsList;
+    if (actionsJson != null) {
+      actionsList = List<String>.from(actionsJson);
+    }
 
     return ProcurementDraft(
-      action: json['action'] ?? 'new',
+      action: json['action'] ?? 'chat',
       supplierName: json['supplier_name'],
       transactionDate: json['transaction_date'] ?? DateTime.now().toString(),
       items: itemsList,
       followUpQuestion: json['follow_up_question'],
-      suggestedActions: suggestedActionsList,
+      suggestedActions: actionsList,
       confidenceScore: (json['confidence_score'] ?? 0).toDouble(),
     );
   }
 
-  // Convert to JSON for sending to backend as context
-  Map<String, dynamic> toJson() => {
-    'action': action,
-    'supplier_name': supplierName,
-    'transaction_date': transactionDate,
-    'items': items.map((i) => i.toJson()).toList(),
-    'follow_up_question': followUpQuestion,
-    'confidence_score': confidenceScore,
-  };
-
-  // Helper to merge items from another draft (for append action)
-  ProcurementDraft copyWithAppendedItems(ProcurementDraft other) {
-    return ProcurementDraft(
-      action: 'new',
-      supplierName: other.supplierName ?? supplierName,
-      transactionDate: transactionDate,
-      items: [...items, ...other.items],
-      followUpQuestion: other.followUpQuestion,
-      confidenceScore: other.confidenceScore,
-    );
+  // Penting: Mengirim balik draft ke Backend agar AI punya memori
+  Map<String, dynamic> toJson() {
+    return {
+      'action': action,
+      'supplier_name': supplierName,
+      'transaction_date': transactionDate,
+      'items': items.map((e) => e.toJson()).toList(),
+      'follow_up_question': followUpQuestion,
+      'suggested_actions': suggestedActions,
+      'confidence_score': confidenceScore,
+    };
   }
-
-  // Helper to update fields from another draft (for update action)
-  ProcurementDraft copyWithUpdatedFields(ProcurementDraft other) {
-    return ProcurementDraft(
-      action: 'new',
-      supplierName: other.supplierName ?? supplierName,
-      transactionDate: other.transactionDate,
-      items: other.items.isNotEmpty ? other.items : items,
-      followUpQuestion: other.followUpQuestion,
-      suggestedActions: other.suggestedActions,
-      confidenceScore: other.confidenceScore,
-    );
-  }
-
-  // Helper to remove items (for delete action)
-  ProcurementDraft copyWithDeletedItems(ProcurementDraft other) {
-    if (other.items.isEmpty) return this;
-
-    final itemToDelete = other.items.first;
-    final updatedItems = items.where((item) {
-      // Keep item if it DOES NOT match the item to delete
-      // Match by name, qty, and price to be specific
-      final isMatch =
-          item.productName.toLowerCase() ==
-              itemToDelete.productName.toLowerCase() &&
-          item.qty == itemToDelete.qty &&
-          item.totalPrice == itemToDelete.totalPrice;
-      return !isMatch;
-    }).toList();
-
-    return ProcurementDraft(
-      action: 'new',
-      supplierName: other.supplierName ?? supplierName,
-      transactionDate: transactionDate,
-      items: updatedItems,
-      followUpQuestion: other.followUpQuestion,
-      confidenceScore: other.confidenceScore,
-    );
-  }
-
-  // Calculate total price of all items
-  double get totalPrice => items.fold(0, (sum, item) => sum + item.totalPrice);
 }

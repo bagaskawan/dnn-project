@@ -3,6 +3,8 @@ import json
 import base64
 from groq import Groq
 from dotenv import load_dotenv
+from fuzzywuzzy import fuzz  # Pastikan install: pip install fuzzywuzzy python-Levenshtein
+from datetime import date
 from app.config import GROQ_TEXT_MODEL, GROQ_VISION_MODEL
 
 # Load API Key
@@ -14,153 +16,170 @@ client = Groq(
 )
 
 # ==========================================
-# 🔥 THE POWERFUL SYSTEM PROMPT (ENGLISH) 🔥
+# 📐 STANDARD UNITS LIBRARY (Static Math)
 # ==========================================
-SYSTEM_PROMPT = """
-You are an expert Procurement Data Analyst AI for a reseller business. 
-Your task is to extract structured procurement data from unstructured Indonesian text (chat) or receipt images.
+# Hanya satuan yang SIFATNYA MUTLAK yang boleh ditaruh di sini.
+# Satuan seperti 'Karung', 'Bal', 'Dus' ditangani via Database Product Rules.
+STANDARD_UNITS = {
+    # Berat
+    'ton': 1000.0,
+    'kwintal': 100.0,
+    'ons': 0.1,
+    'pon': 0.5,
+    # Jumlah
+    'lusin': 12.0,
+    'kodi': 20.0,
+    'gross': 144.0,
+    'rim': 500.0
+}
 
-STRICT OUTPUT RULES:
-1. You must output ONLY valid JSON. No markdown, no explanations.
-2. The JSON must follow this exact schema:
-   {
-     "action": "new" or "append" or "update" or "delete" or "chat",
-     "supplier_name": "string or null", 
-     "transaction_date": "YYYY-MM-DD (use today's date if not found)",
-     "items": [
-       {
-         "product_name": "string (standardize capitalization)",
-         "qty": float (extract numeric quantity),
-         "unit": "string (extract unit e.g., kg, bal, pcs, pack)",
-         "total_price": float (total price for this line item, remove 'Rp' and currency dots)",
-         "notes": "string (any variant details like flavor/color, or null)"
-       }
-     ],
-     "follow_up_question": "string (ALWAYS provide a response message in Indonesian)",
-     "suggested_actions": ["array of action button labels or null"],
-     "confidence_score": float (between 0.0 to 1.0)
-   }
+# ==========================================
+# 🧠 RAG & PROMPT ENGINE
+# ==========================================
 
-SUGGESTED_ACTIONS RULES (Action buttons to help user):
-- suggested_actions is an array of clickable button labels shown to user.
-- Provide suggested_actions based on context:
-  - **Ambiguity Question** (yang mana?): Return the options. E.g., ["10kg", "150kg"]
-  - **Duplicate Product Check**: ["Tambah ke Qty", "Buat Baris Baru"]
-  - **After SUCCESSFUL add/update/delete**: ["Simpan", "Tambah Lagi"]
-  
-- **DO NOT provide suggested_actions (set to null) when:**
-  - Asking for REQUIRED missing data (e.g., supplier name)
-  - Greeting or general chat
-  - Error messages
-  
-- When user ANSWERS a question (provides supplier, clarifies item):
-  - Process the answer first
-  - THEN show appropriate buttons for next action
+BASE_SYSTEM_PROMPT = """
+You are an expert Procurement Data Analyst AI.
+Task: Extract structured data from chat/receipts into JSON.
 
-- Keep labels SHORT (max 3 words each). Max 3 buttons.
+CORE RULES:
+1. Output ONLY valid JSON.
+2. EXTRACT data exactly as stated. Do NOT perform math conversions yourself (e.g. if user says '1.5 ton', keep unit 'ton').
+3. USE CONTEXT: If provided with 'Known Products', try to match user input to those exact product names and units.
 
-INTELLIGENT BEHAVIOR RULES:
-- **APPEND vs UPDATE/DELETE AMBIGUITY CHECK**:
-  - Before setting action="update" or "delete", CHECK CURRENT_DRAFT.
-  - **Count matching items**:
-    - If **0 matches**: Return chat "Barang [nama] tidak ditemukan di daftar."
-    - If **1 match**: **PROCEED DIRECTLY**. Do NOT ask "yang mana". Set action="delete" or "update".
-    - If **>1 matches** (Duplicates):
-      - Set action="chat".
-      - Set follow_up_question="[Nama Barang] yang mana? Yang [Spec A] atau [Spec B]?" (Be specific).
+JSON SCHEMA:
+{
+  "action": "new/append/update/delete/chat",
+  "supplier_name": "string or null", 
+  "transaction_date": "YYYY-MM-DD",
+  "items": [
+    {
+      "product_name": "string",
+      "qty": float,
+      "unit": "string", 
+      "total_price": float,
+      "notes": "string"
+    }
+  ],
+  "follow_up_question": "string (If ambiguous)",
+  "suggested_actions": ["array of strings"]
+}
 
-- **ACTION DETERMINATION**:
-  - "Tambah", "lagi", "add" -> action="append". (Returns ONLY NEW items).
-  - "Ubah", "ganti", "edit" -> action="update". (Returns item with NEW values to replace target).
-  - "Hapus", "buang", "delete", "batal" -> action="delete". (Returns the SPECIFIC item to be removed).
-  - "Simpan", "save", "selesai", "done" -> action="chat" (Handle save request, see SAVE RULES below).
-  - Conversational/Chitchat -> action="chat".
-
-- **FOLLOW-UP CLARIFICATION RULE**:
-  *** CRITICAL: If you previously asked "Yang mana?" for DELETE or UPDATE, and user responds with clarification (e.g., "yang 150kg", "yang pertama", "yang 10rb"), YOU MUST CONTINUE WITH THE ORIGINAL ACTION! ***
-  - Check CURRENT_DRAFT's follow_up_question. If it contains "yang mana" and user's response specifies an item, determine what action was being clarified (delete/update) and proceed with THAT action.
-  - DO NOT treat clarification responses as new data or UPDATE.
-
-- **SAVE RULES (When user says "simpan", "save", "selesai")**:
-  - CHECK CURRENT_DRAFT for supplier_name.
-  - If supplier_name is null or empty:
-    - Set action="chat".
-    - Set follow_up_question="Sebelum disimpan, nama suppliernya siapa dulu?"
-  - If supplier_name exists AND items exist:
-    - Set action="chat".
-    - Set follow_up_question="Data sudah lengkap dan siap disimpan!"
-
-- **UNIT CONVERSION RULES (Standardize to Common Units)**:
-  *** CRITICAL: Apply conversion CORRECTLY using multiplication! ***
-  - Weight:
-    - 1 Ton = 1000 kg (e.g., 2.5 ton = 2500 kg)
-    - 1 Kwintal = 100 kg (e.g., 1.5 kwintal = 150 kg, NOT 15 kg!)
-    - 1 Ons = 0.1 kg (e.g., 5 ons = 0.5 kg)
-  - Quantity:
-    - 1 Lusin = 12 pcs (e.g., 3 lusin = 36 pcs)
-    - 1 Kodi = 20 pcs (e.g., 2 kodi = 40 pcs)
-    - 1 Gross = 144 pcs
-  - 1 Rim = 500 lembar
-  - Always convert to base unit (kg, pcs, lembar) in the output JSON.
-
-- **DUPLICATE PRODUCT CHECK (HIGHEST PRIORITY - CHECK FIRST!)**:
-  *** STOP! Before doing ANYTHING with a new item, CHECK CURRENT_DRAFT first! ***
-  - If user adds a product (e.g., "Alpuket 50kg 500rb") and CURRENT_DRAFT already has an item with the SAME product name:
-    - **DO NOT ADD THE ITEM YET!**
-    - Set action="chat" (NOT append, NOT new!)
-    - Set items=[] (EMPTY! Do not include the new item!)
-    - Set follow_up_question="Sudah ada [Nama] [X kg] di daftar. Mau ditambahkan ke qty yang ada atau buat baris baru?"
-    - Set suggested_actions=["Tambah ke Qty", "Buat Baris Baru"]
-    - WAIT for user response before processing!
-  
-  - **After user clarifies "Tambah ke Qty"**:
-    - Set action="update".
-    - COPY ALL items from CURRENT_DRAFT.
-    - MERGE the qty and price of the matching product.
-    - Return COMPLETE items list.
-  
-  - **After user clarifies "Buat Baris Baru"**:
-    - Set action="append".
-    - Return ONLY the new item (separate line item).
-
-- **CRITICAL FOR APPEND**: When action="append", the items array must contain **ONLY THE NEW ITEMS** being added. Do **NOT** include items from CURRENT_DRAFT.
-- **CRITICAL FOR DELETE**: When action="delete", the items array must contain **THE EXACT ITEM** to be deleted (copy all details from CURRENT_DRAFT including qty and price).
-
-CONVERSATIONAL RESPONSE RULES (follow_up_question):
-*** CRITICAL: follow_up_question must ALWAYS be filled with a conversational response! ***
-- ALWAYS respond in Indonesian, keep it short and friendly.
-
-1. PURE CHAT (action="chat"): Respond to greeting or ask clarification.
-2. MISSING DATA: Ask for missing info (supplier/items).
-3. CONFIRMATION after UPDATE: "Oke, [produk] sudah diupdate."
-4. CONFIRMATION after APPEND: "Oke, [produk] sudah ditambahkan!"
-5. CONFIRMATION after DELETE: "Oke, [produk] sudah dihapus dari daftar."
-6. AMBIGUITY: "Produk yang mana? Yang [A] atau [B]?"
-7. SAVE REMINDER: "Sebelum disimpan, nama suppliernya siapa dulu?"
-
-CONTEXT UNDERSTANDING RULES:
-- If user says "Beli 2 bal keripik 50rb", it means Qty=2, Unit=bal, Total Price=50000.
-- If price is per unit ("@10rb"), calculate total_price.
-- Return empty items with low confidence if text is gibberish.
+DUPLICATE & AMBIGUITY HANDLING:
+- If user input matches a 'Known Product' but the unit is different (e.g. User: 'Kg', DB: 'Bal'), extract the RAW unit. Let backend handle conversion.
+- If multiple products match (e.g. 'Alpukat'), ask: "Alpukat yang mana? Mentega atau Biasa?".
 """
 
-async def parse_procurement_text(text_input: str, current_draft: dict = None):
-    try:
-        # Build context message if we have a current draft
-        context_msg = ""
-        if current_draft:
-            context_msg = f"\n\nCURRENT_DRAFT (use this context for follow-up responses):\n{json.dumps(current_draft, ensure_ascii=False)}\n"
+def normalize_item_data(item, product_context=None):
+    """
+    Fungsi 'Otak Kiri' (Logika Python) untuk menangani Matematika & Konversi.
+    AI (Otak Kanan) hanya ekstrak teks, Python yang menghitung.
+    """
+    raw_unit = item['unit'].lower().strip()
+    qty = float(item['qty'])
+    
+    # 1. Cek Satuan Standar (Global)
+    if raw_unit in STANDARD_UNITS:
+        # Konversi ke Base Unit (biasanya Kg atau Pcs)
+        converted_qty = qty * STANDARD_UNITS[raw_unit]
+        item['notes'] = f"Konversi Otomatis: {qty} {raw_unit} = {converted_qty} (Base Unit)"
+        item['qty'] = converted_qty
+        # Kita asumsikan output standar adalah 'kg' utk berat, 'pcs' utk jumlah
+        # Tapi idealnya ini dicek lagi tipe produknya. Untuk aman, kita biarkan unit asli
+        # atau ubah jika kamu punya standar baku 'kg' di DB.
+        # item['unit'] = 'kg' if raw_unit in ['ton','kwintal','ons'] else 'pcs'
+    
+    # 2. Cek Satuan Dinamis Berdasarkan Produk (RAG)
+    elif product_context:
+        # Cari produk yang cocok di context
+        best_match = None
+        highest_score = 0
         
+        for prod in product_context:
+            score = fuzz.ratio(item['product_name'].lower(), prod['name'].lower())
+            if score > 80 and score > highest_score:
+                highest_score = score
+                best_match = prod
+        
+        # Jika ketemu produknya, cek conversion_rules-nya
+        if best_match and 'conversion_rules' in best_match:
+            rules = best_match['conversion_rules'] # Contoh: {"karung": 30, "bal": 20}
+            # Cek apakah unit user (misal "karung") ada di rules
+            if raw_unit in rules:
+                conversion_factor = float(rules[raw_unit])
+                converted_qty = qty * conversion_factor
+                item['notes'] = f"Konversi Produk: {qty} {raw_unit} @ {conversion_factor} = {converted_qty} {best_match.get('base_unit', 'unit')}"
+                item['qty'] = converted_qty
+                item['unit'] = best_match.get('base_unit', 'pcs') # Ubah ke base unit DB
+
+    return item
+
+async def check_duplicates_logic(ai_json, current_draft):
+    """
+    Logic Python untuk cek duplikat. Lebih akurat daripada menyuruh AI.
+    """
+    if ai_json['action'] not in ['new', 'append']:
+        return ai_json
+
+    new_items_processed = []
+    
+    for new_item in ai_json['items']:
+        is_duplicate = False
+        if current_draft and 'items' in current_draft:
+            for idx, existing in enumerate(current_draft['items']):
+                # Fuzzy match nama produk
+                similarity = fuzz.ratio(new_item['product_name'].lower(), existing['product_name'].lower())
+                
+                if similarity > 85: # Ambang batas kemiripan
+                    is_duplicate = True
+                    # Kita INTERUPSI respon AI
+                    return {
+                        "action": "chat",
+                        "supplier_name": ai_json.get('supplier_name'),
+                        "transaction_date": ai_json.get('transaction_date'),
+                        "items": [], # Jangan masukkan item dulu
+                        "follow_up_question": f"Sudah ada '{existing['product_name']}' ({existing['qty']} {existing['unit']}) di draft. Mau ditambahkan ke qty yang ada, atau buat baris baru?",
+                        "suggested_actions": ["Tambah ke Qty", "Buat Baris Baru"],
+                        # Simpan data sementara di memory/frontend (hidden field) bisa ditangani nanti
+                        "confidence_score": 1.0
+                    }
+        
+        if not is_duplicate:
+            new_items_processed.append(new_item)
+            
+    ai_json['items'] = new_items_processed
+    return ai_json
+
+# ==========================================
+# 🚀 MAIN SERVICE FUNCTIONS
+# ==========================================
+
+async def parse_procurement_text(text_input: str, current_draft: dict = None, known_products: list = None):
+    """
+    known_products: List of dict dari DB [{'name': 'Alpukat', 'base_unit': 'kg', 'conversion_rules': {'karung': 30}}]
+    """
+    try:
+        # 1. RAG: Bangun Context String dari Known Products
+        rag_context = ""
+        if known_products:
+            product_list_str = "\n".join([f"- {p['name']} (Base: {p['base_unit']}, Rules: {json.dumps(p.get('conversion_rules', {}))})" for p in known_products])
+            rag_context = f"\nKNOWN PRODUCTS IN DATABASE (Use these details if matching):\n{product_list_str}\n"
+
+        # 2. Draft Context
+        draft_context = ""
+        if current_draft:
+            draft_context = f"\nCURRENT_DRAFT:\n{json.dumps(current_draft, ensure_ascii=False)}\n"
+        
+        # 3. Call AI
         completion = client.chat.completions.create(
             model=GROQ_TEXT_MODEL,
             messages=[
                 {
                     "role": "system",
-                    "content": SYSTEM_PROMPT
+                    "content": BASE_SYSTEM_PROMPT + rag_context
                 },
                 {
                     "role": "user",
-                    "content": f"{context_msg}USER INPUT DATA:\n{text_input}"
+                    "content": f"{draft_context}USER INPUT:\n{text_input}"
                 }
             ],
             temperature=0,
@@ -168,42 +187,52 @@ async def parse_procurement_text(text_input: str, current_draft: dict = None):
         )
         
         result_content = completion.choices[0].message.content
-        print(f"DEBUG RAW AI OUTPUT (Text): {result_content}")
+        ai_response = json.loads(result_content)
         
-        return json.loads(result_content)
+        # 4. Post-Processing (Python Logic)
+        # a. Normalisasi Matematika & Satuan Dinamis
+        for item in ai_response.get('items', []):
+            normalize_item_data(item, product_context=known_products)
+            
+        # b. Cek Duplikat (Hanya jika action new/append)
+        final_response = await check_duplicates_logic(ai_response, current_draft)
+        
+        return final_response
         
     except Exception as e:
         print(f"Error Groq Text Parsing: {e}")
-        from datetime import date
         return {
-            "action": "new",
-            "supplier_name": None,
-            "transaction_date": date.today().isoformat(),
-            "items": [], 
-            "follow_up_question": None,
+            "action": "chat",
+            "follow_up_question": "Maaf, ada kesalahan sistem saat memproses pesan. Bisa ulangi?",
+            "items": [],
             "confidence_score": 0.0
         }
 
-async def parse_procurement_image(image_bytes, current_draft: dict = None):
+async def parse_procurement_image(image_bytes, current_draft: dict = None, known_products: list = None):
     try:
-        # Encode image to base64
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
         
-        # Build context message if we have a current draft
-        context_msg = ""
+        # RAG Context untuk Image juga
+        rag_context = ""
+        if known_products:
+            # Batasi context untuk gambar agar tidak token limit (ambil nama saja)
+            names_only = ", ".join([p['name'] for p in known_products[:50]]) 
+            rag_context = f"\nPossible Product Matches: {names_only}\n"
+
+        draft_context = ""
         if current_draft:
-            context_msg = f"CURRENT_DRAFT:\n{json.dumps(current_draft, ensure_ascii=False)}\n\n"
+            draft_context = f"CURRENT_DRAFT:\n{json.dumps(current_draft, ensure_ascii=False)}\n\n"
         
         chat_completion = client.chat.completions.create(
             messages=[
                 {
                     "role": "system", 
-                    "content": SYSTEM_PROMPT
+                    "content": BASE_SYSTEM_PROMPT + rag_context
                 },
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": f"{context_msg}ANALYZE THIS RECEIPT IMAGE:"},
+                        {"type": "text", "text": f"{draft_context}ANALYZE THIS RECEIPT IMAGE:"},
                         {
                             "type": "image_url",
                             "image_url": {
@@ -219,18 +248,21 @@ async def parse_procurement_image(image_bytes, current_draft: dict = None):
         )
 
         result_content = chat_completion.choices[0].message.content
-        print(f"DEBUG RAW AI OUTPUT (Image): {result_content}")
+        ai_response = json.loads(result_content)
         
-        return json.loads(result_content)
+        # Post-Processing yang sama
+        for item in ai_response.get('items', []):
+            normalize_item_data(item, product_context=known_products)
+            
+        final_response = await check_duplicates_logic(ai_response, current_draft)
+        
+        return final_response
         
     except Exception as e:
         print(f"Error Groq Image Parsing: {e}")
-        from datetime import date
         return {
-            "action": "new",
-            "supplier_name": None,
-            "transaction_date": date.today().isoformat(),
+            "action": "chat",
+            "follow_up_question": "Gagal membaca gambar. Pastikan gambar jelas.",
             "items": [], 
-            "follow_up_question": None,
             "confidence_score": 0.0
         }

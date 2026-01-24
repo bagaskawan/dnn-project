@@ -3,7 +3,7 @@ from typing import List, Optional
 
 # Model untuk Input Teks Chat dengan Context
 class ChatInput(BaseModel):
-    text: str
+    new_message: str
     current_draft: Optional[dict] = None  # Current draft context for follow-up responses
 
 # Model untuk Output Item Barang (Hasil Ekstrak AI)
