@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../../core/constants/colors.dart';
 import '../../core/services/api_service.dart';
 import '../../models/procurement_draft.dart';
+import 'dart:async'; // For debounce
 
 class BuyPage extends StatefulWidget {
   const BuyPage({super.key});
@@ -13,14 +15,103 @@ class BuyPage extends StatefulWidget {
   State<BuyPage> createState() => _BuyPageState();
 }
 
-class _BuyPageState extends State<BuyPage> {
+class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final ImagePicker _imagePicker = ImagePicker();
+  final ImagePicker _imagePicker = ImagePicker(); // Keep one instance
   final ApiService _apiService = ApiService();
 
   // Store current draft for accumulating items
   ProcurementDraft? _currentDraft;
+  String? _transactionCode; // To store random invoice code
+
+  // Animation Controller for Pinned Draft Card
+  late AnimationController _draftCardAnimationController;
+  late Animation<double> _draftCardAnimation;
+
+  // Autocomplete State
+  List<Map<String, dynamic>> _suggestions = [];
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize Animation Controller
+    _draftCardAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600), // Smooth transition duration
+    );
+    _draftCardAnimation = CurvedAnimation(
+      parent: _draftCardAnimationController,
+      curve: Curves.fastOutSlowIn,
+    );
+
+    // Listen to text changes for Autocomplete
+    _messageController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _messageController.removeListener(_onSearchChanged);
+    _debounce?.cancel();
+    _draftCardAnimationController.dispose();
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      _searchProducts();
+    });
+  }
+
+  Future<void> _searchProducts() async {
+    final query = _messageController.text;
+    // Simple logic: Trigger only if last word is being typed and length > 1
+    // But for "Smart Command" usually we check the whole or last part.
+    // Let's try simple: Search matched against whole text OR last word.
+
+    if (query.length < 2) {
+      setState(() => _suggestions = []);
+      return;
+    }
+
+    // Ambil kata terakhir untuk autocomplete nama barang
+    final lastWord = query.trim().split(' ').last;
+
+    // Optimization: Don't search if it looks like a quantity (starts with digit)
+    // RegExp(r'^[0-9]') matches if string starts with a number.
+    if (lastWord.length < 2 || RegExp(r'^[0-9]').hasMatch(lastWord)) {
+      setState(() => _suggestions = []);
+      return;
+    }
+
+    final results = await _apiService.searchProducts(lastWord);
+    setState(() {
+      _suggestions = results;
+    });
+  }
+
+  void _applySuggestion(Map<String, dynamic> product) {
+    final text = _messageController.text;
+    final words = text.trim().split(' ');
+    if (words.isNotEmpty) {
+      words.removeLast(); // Remove partial word
+    }
+    words.add(product['name']); // Add full product name
+
+    final newText = "${words.join(' ')} "; // Add space for next input (qty)
+    _messageController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.fromPosition(
+        TextPosition(offset: newText.length),
+      ),
+    );
+
+    setState(() => _suggestions = []);
+  }
 
   // Initial Chat Items
   final List<Map<String, dynamic>> _chatItems = [
@@ -43,6 +134,8 @@ class _BuyPageState extends State<BuyPage> {
     final text = customText ?? _messageController.text.trim();
     if (text.isEmpty) return;
 
+    print("[APP_DEBUG] Sent User Message: $text");
+
     setState(() {
       // Remove old action buttons when user sends new message
       _chatItems.removeWhere((item) => item['type'] == 'action_buttons');
@@ -57,6 +150,9 @@ class _BuyPageState extends State<BuyPage> {
       text,
       _currentDraft, // Logika baru: Kirim object draft, bukan history list
     );
+
+    print("[APP_DEBUG] Received AI Response draft: ${draft?.toJson()}");
+
     _handleApiResponse(draft);
   }
 
@@ -65,10 +161,93 @@ class _BuyPageState extends State<BuyPage> {
       _chatItems.removeWhere((item) => item['type'] == 'typing');
 
       if (newDraft != null) {
-        // 1. Update Global State Draft
-        _currentDraft = newDraft;
+        // --- 1. STATE MANAGEMENT: IMMUTABLE MERGE STRATEGY ---
 
-        // 2. Tampilkan Follow-up Question (Pertanyaan AI)
+        if (_currentDraft == null || newDraft.action == 'new') {
+          // KASUS 1: Draft Baru -> Replace Total
+          _currentDraft = newDraft;
+          _transactionCode ??=
+              "INV-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}";
+          _chatItems.removeWhere(
+            (item) => item['type'] == 'system_note',
+          ); // Hapus intro
+        } else if (newDraft.action == 'chat') {
+          // KASUS 2: Chat / Klarifikasi -> Jangan ubah data draft, cuma nanya
+          // Biarkan _currentDraft apa adanya (mempertahankan state sebelumnya)
+        } else if (newDraft.action == 'merge_confirm') {
+          // KASUS 3: Merge Confirmation -> Simpan mergeCandidate untuk button handler
+          // Preserve existing items, add mergeCandidate info
+          _currentDraft = ProcurementDraft(
+            action: 'merge_confirm',
+            supplierName: _currentDraft!.supplierName,
+            transactionDate: _currentDraft!.transactionDate,
+            items: _currentDraft!.items, // Keep existing items
+            followUpQuestion: newDraft.followUpQuestion,
+            suggestedActions: newDraft.suggestedActions,
+            confidenceScore: newDraft.confidenceScore,
+            mergeCandidate: newDraft.mergeCandidate, // Store for button click
+            pendingItems: newDraft.pendingItems,
+          );
+        } else if (newDraft.action == 'clarify') {
+          // KASUS 4: Clarify -> Sama seperti chat, tanya klarifikasi
+          // Biarkan _currentDraft apa adanya
+        } else if (newDraft.action == 'update') {
+          // KASUS 5: Update (Supplier Change) -> Hanya update field, JANGAN merge items
+          // Items tetap dari _currentDraft yang sudah ada
+          _currentDraft = ProcurementDraft(
+            action: 'update',
+            supplierName: newDraft.supplierName ?? _currentDraft!.supplierName,
+            transactionDate: _currentDraft!.transactionDate,
+            items: _currentDraft!
+                .items, // KEEP existing items, don't add from response!
+            followUpQuestion: newDraft.followUpQuestion,
+            suggestedActions: newDraft.suggestedActions,
+            confidenceScore: newDraft.confidenceScore,
+          );
+        } else if (newDraft.action == 'append') {
+          // KASUS 6: Append -> Gabungkan items baru ke items lama
+          List<ExtractedItem> mergedItems = List.from(_currentDraft!.items);
+          mergedItems.addAll(newDraft.items);
+
+          _currentDraft = ProcurementDraft(
+            action: 'update',
+            supplierName: newDraft.supplierName ?? _currentDraft!.supplierName,
+            transactionDate: _currentDraft!.transactionDate,
+            items: mergedItems,
+            followUpQuestion: newDraft.followUpQuestion,
+            suggestedActions: newDraft.suggestedActions,
+            confidenceScore: newDraft.confidenceScore,
+          );
+        } else if (newDraft.action == 'delete') {
+          // KASUS 7: Delete -> Gunakan items dari response (sudah dihapus oleh backend)
+          _currentDraft = ProcurementDraft(
+            action: 'update',
+            supplierName: newDraft.supplierName ?? _currentDraft!.supplierName,
+            transactionDate: _currentDraft!.transactionDate,
+            items:
+                newDraft.items, // Use items from backend (item already removed)
+            followUpQuestion: newDraft.followUpQuestion,
+            suggestedActions: newDraft.suggestedActions,
+            confidenceScore: newDraft.confidenceScore,
+          );
+        }
+
+        // --- 2. UI TRIGGER: ANIMASI KARTU ---
+        // Munculkan kartu jika ada Supplier ATAU ada Item
+        bool hasData =
+            _currentDraft != null &&
+            ((_currentDraft!.supplierName != null &&
+                    _currentDraft!.supplierName!.isNotEmpty) ||
+                _currentDraft!.items.isNotEmpty);
+
+        if (hasData &&
+            _draftCardAnimationController.status != AnimationStatus.completed) {
+          _draftCardAnimationController.forward();
+        }
+
+        // --- 3. UI FEEDBACK: CHAT BUBBLES ---
+
+        // A. Bubble Pertanyaan AI
         if (newDraft.followUpQuestion != null &&
             newDraft.followUpQuestion!.isNotEmpty) {
           _chatItems.add({
@@ -77,28 +256,66 @@ class _BuyPageState extends State<BuyPage> {
           });
         }
 
-        // 3. Tampilkan Draft Card (Hanya jika ada Items)
-        // Kita tampilkan card di setiap update data agar user lihat progressnya
-        if (newDraft.items.isNotEmpty) {
-          _chatItems.add({'type': 'draft_card', 'data': newDraft});
+        // B. Tombol Aksi (Suggested Actions)
+        List<String> actions = newDraft.suggestedActions ?? [];
+
+        // Logic tambahan: Jika draft sudah ada isi, selalu tawarkan "Simpan" jika belum ada
+        if (hasData &&
+            !actions.contains("Simpan") &&
+            !actions.contains("Jadikan Supplier: ${_messageController.text}")) {
+          // Cek kondisi agar tombol simpan tidak muncul di tengah klarifikasi ambigu
+          if (newDraft.action != 'chat') {
+            actions.add("Simpan");
+          }
         }
 
-        // 4. Tampilkan Action Buttons (Jika ada saran dari AI)
-        if (newDraft.suggestedActions != null &&
-            newDraft.suggestedActions!.isNotEmpty) {
-          _chatItems.add({
-            "type": "action_buttons",
-            "actions": newDraft.suggestedActions!,
-          });
+        if (actions.isNotEmpty) {
+          _chatItems.add({"type": "action_buttons", "actions": actions});
+        }
+
+        // --- 4. AUTO RE-PROCESS PENDING ITEMS ---
+        // If backend returns pendingItemsToReprocess, automatically re-send them
+        if (newDraft.pendingItemsToReprocess != null &&
+            newDraft.pendingItemsToReprocess!.isNotEmpty) {
+          // Convert pending items to text format and re-send
+          _reprocessPendingItems(newDraft.pendingItemsToReprocess!);
         }
       } else {
         _chatItems.add({
           "type": "system_text",
-          "text": "Maaf, terjadi kesalahan koneksi atau server.",
+          "text": "Maaf, terjadi kesalahan koneksi.",
         });
       }
     });
     _scrollToBottom();
+  }
+
+  void _reprocessPendingItems(List<Map<String, dynamic>> pendingItems) {
+    // Convert pending items back to text format for re-processing
+    // This will trigger duplicate check again
+    for (var item in pendingItems) {
+      String productName = item['product_name'] ?? '';
+      String variant = item['variant'] ?? '';
+      double qty = (item['qty'] ?? 0).toDouble();
+      String unit = item['unit'] ?? 'pcs';
+      double price = (item['total_price'] ?? 0).toDouble();
+      String notes = item['notes'] ?? '';
+
+      // Build text representation
+      String itemText = productName;
+      if (variant.isNotEmpty) {
+        itemText += ' $variant';
+      }
+      if (notes.isNotEmpty) {
+        itemText += ' $notes';
+      }
+      itemText += ' ${qty.toStringAsFixed(0)}$unit ${price.toStringAsFixed(0)}';
+
+      // Re-send as new input (will be checked for duplicates)
+      Future.delayed(Duration(milliseconds: 500), () {
+        _sendMessage(customText: itemText);
+      });
+    }
   }
 
   void _showImagePickerOptions() {
@@ -172,6 +389,491 @@ class _BuyPageState extends State<BuyPage> {
     _handleApiResponse(draft);
   }
 
+  void _showEditListBottomSheet() {
+    if (_currentDraft == null || _currentDraft!.items.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Text(
+                  "Pilih Barang untuk Diedit",
+                  style: GoogleFonts.montserrat(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: _currentDraft!.items.length,
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final item = _currentDraft!.items[index];
+                      // Build subtitle with qty, unit, price, and optionally notes
+                      String subtitle =
+                          "${item.qty.toStringAsFixed(0)} ${item.unit} • Rp ${_formatCurrency(item.totalPrice)}";
+                      if (item.notes != null && item.notes!.isNotEmpty) {
+                        subtitle += "\n${item.notes}";
+                      }
+
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          item.displayName, // Shows "Nangka (Besar)" instead of "Nangka"
+                          style: GoogleFonts.montserrat(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        subtitle: Text(
+                          subtitle,
+                          style: GoogleFonts.montserrat(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        isThreeLine:
+                            item.notes != null && item.notes!.isNotEmpty,
+                        trailing: Center(
+                          widthFactor: 1,
+                          child: Icon(
+                            Icons.edit_outlined,
+                            size: 20,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context); // Close list modal
+                          _showEditFormBottomSheet(index, item); // Open form
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEditFormBottomSheet(int itemIndex, ExtractedItem item) {
+    final qtyController = TextEditingController(
+      text: item.qty.toStringAsFixed(0),
+    );
+    final unitController = TextEditingController(text: item.unit);
+    final priceController = TextEditingController(
+      text: item.totalPrice.toStringAsFixed(0),
+    );
+    final variantController = TextEditingController(text: item.variant ?? "");
+    final noteController = TextEditingController(text: item.notes ?? "");
+
+    // Determine which optional fields to show
+    final bool hasVariant = item.variant != null && item.variant!.isNotEmpty;
+    final bool hasNotes = item.notes != null && item.notes!.isNotEmpty;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  // Back button row
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pop(context); // Close edit form
+                          _showEditListBottomSheet(); // Reopen list
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.arrow_back_ios,
+                            size: 18,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "Edit ${item.displayName}",
+                          style: GoogleFonts.montserrat(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: qtyController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: "Jumlah",
+                            labelStyle: GoogleFonts.montserrat(fontSize: 12),
+                            isDense: true,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: unitController,
+                          decoration: InputDecoration(
+                            labelText: "Satuan",
+                            labelStyle: GoogleFonts.montserrat(fontSize: 12),
+                            isDense: true,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: priceController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      _CurrencyInputFormatter(),
+                    ],
+                    decoration: InputDecoration(
+                      labelText: "Total Harga (Rp)",
+                      labelStyle: GoogleFonts.montserrat(fontSize: 12),
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                  // Variant field (only if item has variant)
+                  if (hasVariant) ...[
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: variantController,
+                      decoration: InputDecoration(
+                        labelText: "Variant (Ukuran/Tipe)",
+                        labelStyle: GoogleFonts.montserrat(fontSize: 12),
+                        isDense: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ],
+                  // Notes field (only if item has notes)
+                  if (hasNotes) ...[
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: noteController,
+                      decoration: InputDecoration(
+                        labelText: "Catatan",
+                        labelStyle: GoogleFonts.montserrat(fontSize: 12),
+                        isDense: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      onPressed: () {
+                        // 1. Update logic - use controller values if field was shown
+                        final newItem = ExtractedItem(
+                          productName: item.productName,
+                          variant: hasVariant
+                              ? variantController.text
+                              : item.variant,
+                          qty: double.tryParse(qtyController.text) ?? item.qty,
+                          unit: unitController.text,
+                          totalPrice:
+                              double.tryParse(
+                                priceController.text.replaceAll('.', ''),
+                              ) ??
+                              item.totalPrice,
+                          notes: hasNotes ? noteController.text : item.notes,
+                        );
+
+                        setState(() {
+                          if (_currentDraft != null) {
+                            _currentDraft!.items[itemIndex] = newItem;
+                            // Pinned Draft Card will rebuild automatically with setState
+                          }
+                        });
+
+                        Navigator.pop(context);
+                        _scrollToBottom();
+                      },
+                      child: Text(
+                        "Simpan Perubahan",
+                        style: GoogleFonts.montserrat(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showConfirmationModal() {
+    if (_currentDraft == null || _currentDraft!.items.isEmpty) return;
+
+    double totalPrice = 0;
+    for (var item in _currentDraft!.items) {
+      totalPrice += item.totalPrice;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Text(
+                "Konfirmasi Pembelian",
+                style: GoogleFonts.montserrat(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Reuse similar layout to Pinned Card for consistency
+              Card(
+                elevation: 0,
+                color: Colors.grey.shade50,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.grey.shade200),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Text(
+                        _currentDraft!.supplierName ?? "Supplier",
+                        style: GoogleFonts.montserrat(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        "${DateTime.now().toString().split(' ')[0].replaceAll('-', '/')} - ${_transactionCode ?? ''}",
+                        style: GoogleFonts.montserrat(
+                          fontSize: 11,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
+                      const Divider(height: 24),
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _currentDraft!.items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final item = _currentDraft!.items[index];
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.displayName,
+                                    style: GoogleFonts.montserrat(
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  Text(
+                                    "${item.qty.toStringAsFixed(0)} ${item.unit}",
+                                    style: GoogleFonts.montserrat(
+                                      fontSize: 11,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Text(
+                                "Rp ${_formatCurrency(item.totalPrice)}",
+                                style: GoogleFonts.montserrat(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const Divider(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("Total"),
+                          Text(
+                            "Rp ${_formatCurrency(totalPrice)}",
+                            style: GoogleFonts.montserrat(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: Text(
+                        "Batal",
+                        style: GoogleFonts.montserrat(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _sendMessage(customText: "Simpan");
+                      },
+                      child: Text(
+                        "Simpan",
+                        style: GoogleFonts.montserrat(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -194,47 +896,293 @@ class _BuyPageState extends State<BuyPage> {
         centerTitle: true,
       ),
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 20,
+            Column(
+              children: [
+                // --- 1. PINNED DRAFT CARD (Top Section) ---
+                // Wrap with SizeTransition for smooth appearance
+                SizeTransition(
+                  sizeFactor: _draftCardAnimation,
+                  axisAlignment: -1.0, // Expand from top
+                  child:
+                      (_currentDraft != null &&
+                          ((_currentDraft!.supplierName != null &&
+                                  _currentDraft!.supplierName!.isNotEmpty) ||
+                              _currentDraft!.items.isNotEmpty))
+                      ? _buildPinnedDraftCard(_currentDraft!)
+                      : const SizedBox.shrink(),
                 ),
-                itemCount: _chatItems.length,
-                itemBuilder: (context, index) {
-                  final item = _chatItems[index];
-                  switch (item['type']) {
-                    case 'info_card': // Menangani Info Card Awal
-                      return _buildInfoCard(item);
-                    case 'system_note':
-                      return _buildSystemNote(item['text']);
-                    case 'system_text':
-                      return _buildSystemText(item['text']);
-                    case 'user_pill':
-                      return _buildUserPill(item['text']);
-                    case 'typing':
-                      return _buildTypingIndicator();
-                    case 'draft_card':
-                      return _buildDraftCard(item['data'] as ProcurementDraft);
-                    case 'date_header':
-                      return _buildDateHeader(item['text']);
-                    case 'action_buttons':
-                      return _buildActionButtons(
-                        item['actions'] as List<String>,
-                      );
-                    default:
-                      return const SizedBox();
-                  }
-                },
-              ),
+
+                // --- 2. CHAT AREA (Bottom Section) ---
+                Expanded(
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 20,
+                    ),
+                    itemCount: _chatItems.length,
+                    itemBuilder: (context, index) {
+                      final item = _chatItems[index];
+                      switch (item['type']) {
+                        case 'info_card':
+                          return _buildInfoCard(item);
+                        case 'system_note':
+                          return _buildSystemNote(item['text']);
+                        case 'system_text':
+                          return _buildSystemText(item['text']);
+                        case 'user_pill':
+                          return _buildUserPill(item['text']);
+                        case 'typing':
+                          return _buildTypingIndicator();
+                        // case 'draft_card': -> REMOVED from chat bubble
+                        case 'date_header':
+                          return _buildDateHeader(item['text']);
+                        case 'action_buttons':
+                          return _buildActionButtons(
+                            item['actions'] as List<String>,
+                          );
+                        default:
+                          return const SizedBox();
+                      }
+                    },
+                  ),
+                ),
+                // Input Area tetap di bawah
+                _buildInputArea(),
+              ],
             ),
-            // Input Area tetap di bawah
-            _buildInputArea(),
+
+            // --- AUTOCOMPLETE OVERLAY ---
+            if (_suggestions.isNotEmpty)
+              Positioned(
+                bottom: 80, // Height of Input Area approx
+                left: 24,
+                right: 24,
+                child: _buildSuggestionsList(),
+              ),
           ],
         ),
+      ),
+    );
+  }
+
+  // --- NEW PINNED WIDGET ---
+  Widget _buildPinnedDraftCard(ProcurementDraft draft) {
+    double totalPrice = 0;
+    for (var item in draft.items) {
+      totalPrice += item.totalPrice;
+    }
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.45,
+      ),
+      margin: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Header
+          Text(
+            draft.supplierName ?? "Siapa nama supplier?",
+            textAlign: TextAlign.center,
+            style: GoogleFonts.montserrat(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          // Show phone number if available (from receipt scanning)
+          if (draft.supplierPhone != null && draft.supplierPhone!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.phone, size: 12, color: Colors.grey.shade500),
+                  const SizedBox(width: 4),
+                  Text(
+                    draft.supplierPhone!,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 11,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Text(
+            "${DateTime.now().toString().split(' ')[0].replaceAll('-', '/')} - ${draft.receiptNumber ?? _transactionCode ?? 'INV-0000'}",
+            textAlign: TextAlign.center,
+            style: GoogleFonts.montserrat(
+              fontSize: 11,
+              color: Colors.grey.shade500,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Divider(height: 1, thickness: 0.5),
+          const SizedBox(height: 12),
+
+          // Scrollable Items List
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                children: draft.items.map((item) {
+                  return Material(
+                    color: Colors.transparent,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 4,
+                        horizontal: 4,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.displayName,
+                                  style: GoogleFonts.montserrat(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  "${item.qty.toStringAsFixed(0)} ${item.unit}",
+                                  style: GoogleFonts.montserrat(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                                if (item.notes != null &&
+                                    item.notes!.isNotEmpty)
+                                  Text(
+                                    item.notes!,
+                                    style: GoogleFonts.montserrat(
+                                      fontSize: 10,
+                                      color: Colors.grey.shade600,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            "Rp ${_formatCurrency(item.totalPrice)}",
+                            style: GoogleFonts.montserrat(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+          const Divider(height: 1, thickness: 0.5),
+          const SizedBox(height: 10),
+
+          // Footer: Subtotal & Total
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "Subtotal",
+                style: GoogleFonts.montserrat(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              Text(
+                "Rp ${_formatCurrency(draft.subtotal ?? totalPrice)}",
+                style: GoogleFonts.montserrat(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
+          // Show discount if available (from receipt scanning)
+          if (draft.discount != null && draft.discount! > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    "Diskon",
+                    style: GoogleFonts.montserrat(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.green.shade600,
+                    ),
+                  ),
+                  Text(
+                    "- Rp ${_formatCurrency(draft.discount!)}",
+                    style: GoogleFonts.montserrat(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          // Total
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "Total",
+                  style: GoogleFonts.montserrat(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  "Rp ${_formatCurrency(draft.total ?? totalPrice)}",
+                  style: GoogleFonts.montserrat(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -302,10 +1250,36 @@ class _BuyPageState extends State<BuyPage> {
         spacing: 8,
         runSpacing: 8,
         children: actions.map((action) {
+          final isEdit = action.toLowerCase() == 'edit';
+          final label = isEdit ? 'Edit' : action;
+
           return GestureDetector(
             onTap: () {
-              // Send the action label directly as a message
-              _sendMessage(customText: action);
+              if (isEdit) {
+                _showEditListBottomSheet();
+              } else if (action.toLowerCase() == 'simpan') {
+                // Validation: Check if supplier name is present
+                if (_currentDraft?.supplierName == null ||
+                    _currentDraft!.supplierName!.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        "Harap isi nama supplier terlebih dahulu!",
+                        style: GoogleFonts.montserrat(color: Colors.white),
+                      ),
+                      backgroundColor: Colors.red.shade400,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  );
+                } else {
+                  _showConfirmationModal();
+                }
+              } else {
+                _sendMessage(customText: label);
+              }
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -574,153 +1548,6 @@ class _BuyPageState extends State<BuyPage> {
     );
   }
 
-  Widget _buildDraftCard(ProcurementDraft draft) {
-    // Hitung total harga
-    double totalPrice = 0;
-    for (var item in draft.items) {
-      totalPrice += item.totalPrice;
-    }
-
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.85,
-        ),
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 20),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // 1. Supplier Name (Centered, Bold)
-              Text(
-                draft.supplierName ?? "Supplier",
-                textAlign: TextAlign.center,
-                style: GoogleFonts.montserrat(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-
-              Text(
-                _formatTransactionDate(draft.transactionDate),
-                textAlign: TextAlign.center,
-                style: GoogleFonts.montserrat(
-                  fontSize: 11,
-                  color: Colors.grey.shade500,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              const Divider(height: 1, thickness: 0.5),
-              const SizedBox(height: 12),
-
-              // 3. Items List
-              if (draft.items.isNotEmpty) ...[
-                Column(
-                  children: draft.items.map((item) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 0),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item.productName,
-                                  style: GoogleFonts.montserrat(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  "${item.qty.toStringAsFixed(0)} ${item.unit}",
-                                  style: GoogleFonts.montserrat(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                                if (item.notes != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 2),
-                                    child: Text(
-                                      item.notes!,
-                                      style: GoogleFonts.montserrat(
-                                        fontSize: 10,
-                                        color: Colors.grey.shade500,
-                                        fontStyle: FontStyle.italic,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            "Rp ${_formatCurrency(item.totalPrice)}",
-                            style: GoogleFonts.montserrat(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-
-                const Divider(height: 1, thickness: 0.5),
-                const SizedBox(height: 10),
-
-                // 4. Subtotal/Total Row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Subtotal",
-                      style: GoogleFonts.montserrat(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    Text(
-                      "Rp ${_formatCurrency(totalPrice)}",
-                      style: GoogleFonts.montserrat(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   String _formatCurrency(double amount) {
     return amount
         .toStringAsFixed(0)
@@ -730,32 +1557,80 @@ class _BuyPageState extends State<BuyPage> {
         );
   }
 
-  String _formatTransactionDate(String isoDate) {
-    try {
-      final dt = DateTime.parse(isoDate).toLocal();
-      const months = [
-        'Januari',
-        'Februari',
-        'Maret',
-        'April',
-        'Mei',
-        'Juni',
-        'Juli',
-        'Agustus',
-        'September',
-        'Oktober',
-        'November',
-        'Desember',
-      ];
-      final day = dt.day;
-      final month = months[dt.month - 1];
-      final year = dt.year;
-      final hour = dt.hour.toString().padLeft(2, '0');
-      final minute = dt.minute.toString().padLeft(2, '0');
+  Widget _buildSuggestionsList() {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 200),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, -4),
+          ),
+        ],
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: _suggestions.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (context, index) {
+          final item = _suggestions[index];
+          return ListTile(
+            dense: true,
+            title: Text(
+              item['name'],
+              style: GoogleFonts.montserrat(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+            subtitle: Text(
+              "Satuan: ${item['unit']}",
+              style: GoogleFonts.montserrat(fontSize: 11, color: Colors.grey),
+            ),
+            onTap: () => _applySuggestion(item),
+          );
+        },
+      ),
+    );
+  }
+}
 
-      return '$day $month $year - $hour.$minute';
-    } catch (e) {
-      return isoDate;
+class _CurrencyInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.selection.baseOffset == 0) {
+      return newValue;
     }
+
+    if (newValue.text.isEmpty) {
+      return newValue.copyWith(text: '');
+    }
+
+    // Hanya ambil digit
+    String rawText = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (rawText.isEmpty) {
+      return newValue.copyWith(text: '');
+    }
+
+    double value = double.parse(rawText);
+
+    // Simple manual formatting to avoid Intl dependency if sticking to regex
+    String newText = value.toInt().toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]}.',
+    );
+
+    return newValue.copyWith(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newText.length),
+    );
   }
 }

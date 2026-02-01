@@ -8,18 +8,30 @@ class ChatInput(BaseModel):
 
 # Model untuk Output Item Barang (Hasil Ekstrak AI)
 class ExtractedItem(BaseModel):
-    product_name: str
+    product_name: str           # Core product: "Nangka", "Kripik"
+    variant: Optional[str] = None  # Size/Type variant: "Besar", "Kecil", "Level 5"
     qty: float
     unit: str
+    unit_price: Optional[float] = None  # Price per unit (from receipt)
     total_price: float
-    notes: Optional[str] = None
+    notes: Optional[str] = None    # Attributes: "Manis", "Pedas Sedang"
 
 # Model untuk Output Utama (Satu Transaksi Utuh)
 class ProcurementDraft(BaseModel):
-    action: Optional[str] = "new"  # "new", "append", "update", "delete", "chat"
+    action: Optional[str] = "new"  # "new", "append", "update", "delete", "chat", "clarify", "merge_confirm"
     supplier_name: Optional[str] = None
+    supplier_phone: Optional[str] = None  # Phone/WA number from receipt
+    supplier_address: Optional[str] = None  # Address from receipt
     transaction_date: str
+    receipt_number: Optional[str] = None  # Invoice/receipt number
     items: List[ExtractedItem]
+    subtotal: Optional[float] = None  # Sum of items before discount
+    discount: Optional[float] = None  # Discount amount
+    total: Optional[float] = None  # Final total after discount
+    payment_method: Optional[str] = None  # Tunai/Transfer/etc
     follow_up_question: Optional[str] = None  # AI asks if data is missing
     suggested_actions: Optional[List[str]] = None  # Action buttons to show (e.g., ["Simpan", "Tidak"])
     confidence_score: float  # AI yakin berapa persen?
+    # Merge confirmation fields
+    merge_candidate: Optional[dict] = None  # Info about existing product match
+    pending_items: Optional[List[dict]] = None  # Items waiting for merge confirmation

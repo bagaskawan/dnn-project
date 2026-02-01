@@ -66,4 +66,22 @@ class ApiService {
       return null;
     }
   }
+
+  // 3. Search Products (Autocomplete)
+  Future<List<Map<String, dynamic>>> searchProducts(String query) async {
+    try {
+      final response = await _dio.get(
+        '/api/v1/products/search',
+        queryParameters: {'q': query},
+      );
+
+      if (response.statusCode == 200) {
+        return List<Map<String, dynamic>>.from(response.data);
+      }
+      return [];
+    } catch (e) {
+      print("Error Search API: $e");
+      return [];
+    }
+  }
 }

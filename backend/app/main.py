@@ -14,6 +14,10 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     print("WARNING: DATABASE_URL not found in .env!")
+else:
+    if "prepared_statement_cache_size" not in DATABASE_URL:
+        separator = "&" if "?" in DATABASE_URL else "?"
+        DATABASE_URL += f"{separator}prepared_statement_cache_size=0"
 
 database = databases.Database(DATABASE_URL)
 
@@ -58,32 +62,123 @@ async def health_check():
 
 @app.post("/api/v1/parse/text")
 async def parse_text_endpoint(chat_data: ChatInput):
-    # A. Ambil Known Products dari DB (RAG Context)
+    print(f"[API_DEBUG] Received Text Input: {chat_data.new_message}")
+    print(f"[API_DEBUG] Current Draft Context: {chat_data.current_draft}")
     known_products = []
     try:
-        # Kita ambil nama, satuan dasar, dan rules konversinya
-        query = "SELECT name, base_unit, conversion_rules FROM products"
+        # Fetch products with variant for enhanced RAG
+        query = "SELECT name, variant, base_unit, category, conversion_rules FROM products"
         rows = await database.fetch_all(query=query)
-        # Convert ke format dictionary
         known_products = [dict(row) for row in rows]
-        # Decode JSONB conversion_rules jika perlu (tergantung driver, biasanya otomatis)
         for p in known_products:
-            if isinstance(p['conversion_rules'], str):
+            if isinstance(p.get('conversion_rules'), str):
                 p['conversion_rules'] = json.loads(p['conversion_rules'])
                 
     except Exception as e:
         print(f"⚠️ RAG Warning: Gagal ambil produk dari DB ({e}). AI akan jalan tanpa konteks produk.")
-        # Jangan crash, lanjut saja dengan list kosong
         known_products = []
 
-    # B. Panggil AI Service
     result = await parse_procurement_text(
         text_input=chat_data.new_message,
         current_draft=chat_data.current_draft,
         known_products=known_products
     )
     
+    print(f"[API_DEBUG] Returning Result: {result}")
+    
     return result
+
+# --- ENDPOINT PRODUCT SEARCH (AUTOCOMPLETE) ---
+@app.get("/api/v1/products/search")
+async def search_products(q: str):
+    """
+    Search products by name for autocomplete.
+    Now includes variant for Smart Separation Strategy.
+    """
+    try:
+        query = """
+            SELECT id, name, variant, base_unit, category 
+            FROM products 
+            WHERE name ILIKE :q OR variant ILIKE :q
+            LIMIT 10
+        """
+        rows = await database.fetch_all(query=query, values={"q": f"%{q}%"})
+        
+        return [
+            {
+                "id": str(row["id"]),
+                "name": row["name"], 
+                "variant": row["variant"],
+                "unit": row["base_unit"],
+                "category": row["category"],
+                # Display name for UI
+                "display_name": f"{row['name']} ({row['variant']})" if row["variant"] else row["name"]
+            } 
+            for row in rows
+        ]
+    except Exception as e:
+        print(f"Error Search Products: {e}")
+        return []
+
+
+# --- ENDPOINT RAG PRODUCT MATCHING ---
+@app.get("/api/v1/products/match")
+async def match_product(name: str, variant: str = None):
+    """
+    RAG endpoint to find similar products in database.
+    Used for deduplication confirmation flow.
+    
+    Returns candidates with similarity info.
+    """
+    from fuzzywuzzy import fuzz
+    
+    try:
+        # Get all products for matching
+        query = "SELECT id, name, variant, base_unit, category FROM products"
+        rows = await database.fetch_all(query=query)
+        
+        candidates = []
+        search_term = f"{name} {variant}".strip() if variant else name
+        
+        for row in rows:
+            db_name = row["name"]
+            db_variant = row["variant"] or ""
+            db_full = f"{db_name} {db_variant}".strip()
+            
+            # Calculate similarity scores
+            name_similarity = fuzz.ratio(name.lower(), db_name.lower())
+            full_similarity = fuzz.ratio(search_term.lower(), db_full.lower())
+            partial_similarity = fuzz.partial_ratio(search_term.lower(), db_full.lower())
+            
+            # Take best score
+            best_score = max(name_similarity, full_similarity, partial_similarity)
+            
+            # Only include if similarity > 50%
+            if best_score >= 50:
+                candidates.append({
+                    "id": str(row["id"]),
+                    "name": db_name,
+                    "variant": row["variant"],
+                    "unit": row["base_unit"],
+                    "category": row["category"],
+                    "display_name": f"{db_name} ({row['variant']})" if row["variant"] else db_name,
+                    "similarity": best_score,
+                    "match_type": "exact" if best_score >= 90 else "similar" if best_score >= 70 else "possible"
+                })
+        
+        # Sort by similarity descending
+        candidates.sort(key=lambda x: x["similarity"], reverse=True)
+        
+        return {
+            "query": {"name": name, "variant": variant},
+            "candidates": candidates[:5],  # Top 5 matches
+            "has_exact_match": any(c["match_type"] == "exact" for c in candidates),
+            "needs_confirmation": len(candidates) > 0 and not any(c["similarity"] == 100 for c in candidates)
+        }
+        
+    except Exception as e:
+        print(f"Error Match Product: {e}")
+        return {"query": {"name": name, "variant": variant}, "candidates": [], "has_exact_match": False, "needs_confirmation": False}
 
 # --- ENDPOINT IMAGE UPLOAD ---
 @app.post("/api/v1/parse/image")
