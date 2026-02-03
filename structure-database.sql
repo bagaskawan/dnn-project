@@ -9,6 +9,7 @@ CREATE TABLE public.contacts (
   address text,
   notes text,
   created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT contacts_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.products (
@@ -23,6 +24,7 @@ CREATE TABLE public.products (
   created_at timestamp with time zone DEFAULT now(),
   variant character varying,
   category character varying,
+  updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT products_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.stock_ledger (
@@ -52,6 +54,8 @@ CREATE TABLE public.transaction_items (
   cost_price_at_moment numeric DEFAULT 0,
   subtotal numeric DEFAULT (input_qty * input_price),
   notes text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT transaction_items_pkey PRIMARY KEY (id),
   CONSTRAINT transaction_items_transaction_id_fkey FOREIGN KEY (transaction_id) REFERENCES public.transactions(id),
   CONSTRAINT transaction_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id)
@@ -68,6 +72,7 @@ CREATE TABLE public.transactions (
   evidence_url text,
   created_by uuid,
   created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT transactions_pkey PRIMARY KEY (id),
   CONSTRAINT transactions_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.contacts(id),
   CONSTRAINT transactions_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id)
@@ -82,5 +87,6 @@ CREATE TABLE public.users (
   is_active boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT now(),
   last_login_at timestamp with time zone,
+  updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT users_pkey PRIMARY KEY (id)
 );

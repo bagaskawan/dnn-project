@@ -84,4 +84,84 @@ class ApiService {
       return [];
     }
   }
+
+  // 4. Commit Transaction to Database
+  Future<CommitTransactionResponse> commitTransaction(
+    ProcurementDraft draft, {
+    String? evidenceUrl,
+  }) async {
+    try {
+      // Calculate total if not provided
+      double total = draft.total ?? 0;
+      if (total == 0) {
+        for (var item in draft.items) {
+          total += item.totalPrice;
+        }
+        if (draft.discount != null && draft.discount! > 0) {
+          total -= draft.discount!;
+        }
+      }
+
+      final response = await _dio.post(
+        '/api/v1/transactions/commit',
+        data: {
+          'supplier_name': draft.supplierName ?? '',
+          'supplier_phone': draft.supplierPhone,
+          'supplier_address': draft.supplierAddress,
+          'transaction_date': draft.transactionDate,
+          'receipt_number': draft.receiptNumber,
+          'items': draft.items.map((e) => e.toJson()).toList(),
+          'discount': draft.discount,
+          'total': total,
+          'payment_method': draft.paymentMethod,
+          'input_source': 'OCR',
+          'evidence_url': evidenceUrl,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return CommitTransactionResponse.fromJson(response.data);
+      }
+      return CommitTransactionResponse(
+        success: false,
+        message: 'Server returned status ${response.statusCode}',
+      );
+    } catch (e) {
+      print("Error Commit Transaction API: $e");
+      return CommitTransactionResponse(
+        success: false,
+        message: 'Gagal menyimpan: $e',
+      );
+    }
+  }
+}
+
+/// Response model for commit transaction
+class CommitTransactionResponse {
+  final bool success;
+  final String? transactionId;
+  final String? invoiceNumber;
+  final int? itemsProcessed;
+  final int? newProductsCreated;
+  final String message;
+
+  CommitTransactionResponse({
+    required this.success,
+    this.transactionId,
+    this.invoiceNumber,
+    this.itemsProcessed,
+    this.newProductsCreated,
+    required this.message,
+  });
+
+  factory CommitTransactionResponse.fromJson(Map<String, dynamic> json) {
+    return CommitTransactionResponse(
+      success: json['success'] ?? false,
+      transactionId: json['transaction_id'],
+      invoiceNumber: json['invoice_number'],
+      itemsProcessed: json['items_processed'],
+      newProductsCreated: json['new_products_created'],
+      message: json['message'] ?? '',
+    );
+  }
 }

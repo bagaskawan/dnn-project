@@ -2,12 +2,98 @@ import os
 import json
 import base64
 import re
-import random 
+import random
+import tempfile
 from groq import Groq
 from dotenv import load_dotenv
 from fuzzywuzzy import fuzz
 from datetime import date
 from app.config import GROQ_TEXT_MODEL, GROQ_VISION_MODEL
+
+# EasyOCR for accurate text extraction (simpler than PaddleOCR, no conflicts)
+import easyocr
+
+# Lazy-loaded OCR instance
+_ocr_reader = None
+
+def get_ocr():
+    """Get or create EasyOCR reader (lazy loading for performance)"""
+    global _ocr_reader
+    if _ocr_reader is None:
+        print("[OCR] Initializing EasyOCR (first run may download models)...")
+        # Support Indonesian (id) and English (en) text
+        _ocr_reader = easyocr.Reader(['id', 'en'], gpu=False)
+    return _ocr_reader
+
+def extract_text_from_image(image_bytes) -> str:
+    """
+    Step 1: Extract raw text from image using EasyOCR.
+    REVISED: Better row grouping logic for skewed receipts.
+    """
+    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as f:
+        f.write(image_bytes)
+        temp_path = f.name
+    
+    try:
+        reader = get_ocr()
+        # width_ths=0.7 allows merging closer words
+        result = reader.readtext(temp_path, paragraph=False, width_ths=0.7)
+        
+        if not result:
+            return ""
+        
+        # Helper to get center Y and min X
+        def get_box_center_y(box):
+            return (box[0][1] + box[2][1]) / 2
+
+        def get_box_min_x(box):
+            return box[0][0]
+
+        # 1. Sort all boxes by Y (top to bottom)
+        boxes = sorted(result, key=lambda r: get_box_center_y(r[0]))
+        
+        # 2. Group into rows
+        rows = []
+        if boxes:
+            current_row = [boxes[0]]
+            last_y = get_box_center_y(boxes[0][0])
+            
+            # Increased threshold for better line merging (was 30)
+            ROW_THRESHOLD = 50 
+            
+            for box in boxes[1:]:
+                current_y = get_box_center_y(box[0])
+                if abs(current_y - last_y) <= ROW_THRESHOLD:
+                    current_row.append(box)
+                else:
+                    rows.append(current_row)
+                    current_row = [box]
+                    last_y = current_y
+            rows.append(current_row)
+        
+        # 3. Sort each row by X (left to right) and join text
+        lines = []
+        for row in rows:
+            # Sort row items by X coordinate
+            row.sort(key=lambda r: get_box_min_x(r[0]))
+            
+            # Filter low confidence items aggressively
+            # Lowered threshold to 0.1 to catch faint prices
+            row_text = [r[1] for r in row if r[2] > 0.1] 
+            
+            if row_text:
+                lines.append(" ".join(row_text))
+        
+        raw_text = '\n'.join(lines)
+        print(f"[OCR] Extracted {len(lines)} lines. Raw Content:\n{raw_text}")
+        return raw_text
+
+    except Exception as e:
+        print(f"[OCR] Error: {e}")
+        return ""
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path) # Cleanup temp file
 
 load_dotenv()
 
@@ -17,6 +103,59 @@ STANDARD_UNITS = {
     'ton': 1000.0, 'kwintal': 100.0, 'ons': 0.1, 'pon': 0.5,
     'lusin': 12.0, 'kodi': 20.0, 'gross': 144.0, 'rim': 500.0
 }
+
+# --- FUZZY MATCHING FOR OCR CORRECTION ---
+
+def fuzzy_correct_product_names(ai_response: dict, known_products: list, threshold: int = 70) -> dict:
+    """
+    Post-process AI response to correct product names using fuzzy matching.
+    This catches OCR errors that the LLM might miss.
+    
+    Args:
+        ai_response: Parsed OCR data from LLM
+        known_products: List of products from database
+        threshold: Minimum similarity score (0-100) to consider a match
+    
+    Returns:
+        Updated ai_response with corrected product names
+    """
+    if not known_products or 'items' not in ai_response:
+        return ai_response
+    
+    # Build searchable product name list
+    product_name_map = {}
+    for p in known_products:
+        full_name = p.get('name', '')
+        variant = p.get('variant', '')
+        if variant:
+            full_name = f"{full_name} {variant}"
+        product_name_map[full_name.lower()] = full_name
+    
+    for item in ai_response.get('items', []):
+        ocr_name = item.get('product_name', '')
+        if not ocr_name:
+            continue
+            
+        ocr_lower = ocr_name.lower()
+        
+        # Find best match
+        best_match = None
+        best_score = 0
+        
+        for db_name_lower, db_name_original in product_name_map.items():
+            # Use token_set_ratio for better matching with word order variations
+            score = fuzz.token_set_ratio(ocr_lower, db_name_lower)
+            if score > best_score:
+                best_score = score
+                best_match = db_name_original
+        
+        # Apply correction if match is good enough
+        if best_match and best_score >= threshold:
+            if best_score < 100:  # Only log if there was a correction
+                print(f"[FUZZY] Corrected '{ocr_name}' → '{best_match}' (score: {best_score})")
+            item['product_name'] = best_match
+    
+    return ai_response
 
 # --- 1. PERSONA & PROMPT ENGINE ---
 
@@ -51,59 +190,68 @@ For each product, separate into 3 components:
 
 # --- RECEIPT SCANNING PROMPT (OCR) ---
 RECEIPT_SCAN_PROMPT = """
-Kamu adalah asisten OCR yang ahli membaca struk belanjaan Indonesia.
+Kamu adalah asisten OCR yang ahli membaca struk belanjaan grosir/reseller Indonesia.
 
-## TUGAS: Ekstrak SEMUA informasi dari gambar struk
+## TUGAS UTAMA:
+Ekstrak data transaksi. Hati-hati dengan **Pola Reseller** (Barang Dus/Bal/Karton).
 
-### INFORMASI TOKO
-- supplier_name: Nama toko (Toko X, UD X, CV X, dll.)
-- supplier_address: Alamat lengkap jika ada
-- supplier_phone: Nomor HP/WA (format: 08xxx atau +62xxx)
+## ATURAN KHUSUS (CRITICAL LOGIC):
 
-### DETAIL TRANSAKSI
-- transaction_date: Tanggal dan waktu dari struk (format: YYYY-MM-DD)
-- receipt_number: Nomor nota/invoice jika ada
+1. **KASUS "ISI" / KARTONAN (Contoh: "Kara Santan Isi 36")**
+   - Jika teks mengandung kata "Isi" diikuti angka besar (12, 24, 36, 48, dll).
+   - **QTY:** Adalah jumlah KEMASAN LUAR (biasanya angka kecil di awal baris, misal 1, 2, 5).
+   - **VARIANT:** Masukkan info isi ke sini (contoh: "Isi 36").
+   - **UNIT:** Gunakan satuan kemasan besar ("Dus", "Karton", "Bal"). JANGAN pakai "Pcs".
+   -> *Contoh Struk:* "2 Kara Santan Isi 36"
+   -> *Output:* Qty: 2 | Unit: Dus | Variant: Isi 36 | Product: Kara Santan
 
-### DAFTAR PRODUK
-Untuk setiap item, ekstrak:
-- product_name: Nama produk inti
-- variant: Varian ukuran/tipe jika ada
-- qty: Jumlah (angka)
-- unit: Satuan (pcs, kg, dll)
-- unit_price: Harga per satuan
-- total_price: Total = qty × unit_price
+2. **KASUS UKURAN BERAT (Contoh: "Singkong 5 1kg" atau "5x 1kg")**
+   - Ada dua angka berdekatan? Angka yang lebih kecil/bulat biasanya QTY. Angka dengan satuan berat (kg/gr) adalah VARIANT.
+   - **JANGAN KALIKAN.** Jika tertulis "5 1kg", artinya 5 Bungkus ukuran 1kg. BUKAN 5kg curah.
+   - **QTY:** 5
+   - **VARIANT:** 1kg
+   - **UNIT:** "Bungkus" atau "Pcs" (Kecuali memang beli curah kiloan).
+   -> *Contoh Struk:* "Singkong Jadul Ori 5 1kg"
+   -> *Output:* Qty: 5 | Unit: Bungkus | Variant: 1kg | Product: Singkong Jadul Ori
 
-### TOTAL BELANJAAN
-- subtotal: Jumlah sebelum diskon
-- discount: Potongan harga jika ada
-- total: Jumlah akhir yang dibayar
-- payment_method: Tunai/Transfer/dll
+3. **KASUS HARGA (CRITICAL - HITUNG QTY!)**
+   - Jika OCR **TIDAK MENANGKAP QTY** tapi ada **HARGA SATUAN dan TOTAL**:
+   - **HITUNG QTY: `qty = total_price / unit_price`**
+   -> *Contoh:* unit_price=17.000, total=85.000 → qty = 85000/17000 = **5**
+   -> *Contoh:* unit_price=20.000, total=40.000 → qty = 40000/20000 = **2**
+   - Jika hasil bukan bilangan bulat, bulatkan ke bawah.
+   - JANGAN default ke qty=1 jika bisa dihitung dari harga!
 
 ## FORMAT OUTPUT (JSON):
 {
   "action": "new",
   "supplier_name": "Nama Toko",
-  "supplier_phone": "08xxxxxxxxx",
-  "supplier_address": "Alamat lengkap",
+  "supplier_phone": "No HP/WA",
+  "supplier_address": "Alamat",
   "transaction_date": "YYYY-MM-DD",
-  "receipt_number": "No. Invoice",
   "items": [
-    {"product_name":"", "variant":null, "qty":1, "unit":"pcs", "unit_price":0, "total_price":0, "notes":null}
+    {
+      "product_name": "Nama Produk Inti",
+      "variant": "Ukuran/Isi (cth: 1kg, Isi 36)",
+      "qty": 0, 
+      "unit": "Satuan (Dus/Bungkus/Pcs/Kg)",
+      "unit_price": 0,
+      "total_price": 0,
+      "notes": "Catatan lain"
+    }
   ],
   "subtotal": 0,
   "discount": 0,
   "total": 0,
-  "payment_method": "Tunai",
-  "follow_up_question": "Struk berhasil dibaca! Ada yang perlu dikoreksi Kak?",
-  "suggested_actions": ["Edit", "Simpan"],
-  "confidence_score": 0.85
+  "payment_method": "Tunai/Transfer",
+  "follow_up_question": "Struk terbaca! Cek qty dan variannya ya Kak?",
+  "confidence_score": 0.9
 }
 
-PENTING:
-- Baca SEMUA produk yang tercantum di struk
-- Jika ada harga satuan di struk, isi unit_price
-- Jika tidak yakin, set confidence_score lebih rendah
-- Jangan skip produk apapun!
+## PENTING - JANGAN SKIP PRODUK!
+- Ekstrak SEMUA produk yang ada di teks OCR
+- Jika ada produk yang tidak jelas, tetap masukkan dengan confidence rendah
+- Jangan abaikan produk apapun!
 """
 
 MISSING_SUPPLIER_INSTRUCTION = """
@@ -487,25 +635,131 @@ async def parse_procurement_text(text_input: str, current_draft: dict = None, kn
         return {"action": "chat", "follow_up_question": "Sistem sedang sibuk, coba lagi ya Kak!", "items": []}
 
 async def parse_procurement_image(image_bytes, current_draft: dict = None, known_products: list = None):
+    """
+    TWO-STEP OCR PIPELINE:
+    Step 1: PaddleOCR - Accurate text extraction from image
+    Step 2: Text LLM + RAG - Parse text and correct typos using product database
+    """
     try:
-        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+        # ============================================
+        # STEP 1: Extract text using PaddleOCR (accurate)
+        # ============================================
+        raw_text = extract_text_from_image(image_bytes)
+        print(f"[RECEIPT_OCR] Step 1 - Raw OCR Text:\n{raw_text}\n")
         
-        # Use specialized receipt scanning prompt
-        chat_completion = client.chat.completions.create(
+        if not raw_text or len(raw_text.strip()) < 10:
+            return {
+                "action": "chat", 
+                "follow_up_question": "Tidak bisa membaca teks dari gambar. Pastikan foto struk jelas ya Kak! 📸", 
+                "items": []
+            }
+        
+        # ============================================
+        # STEP 2: Parse with Text LLM + Product Database (RAG)
+        # ============================================
+        # This uses the smarter text model + fuzzy matching to correct typos
+        
+        # Build product context for RAG-based correction
+        rag_context = ""
+        if known_products:
+            product_names = [f"- {p.get('name', '')} ({p.get('variant', '')})" for p in known_products[:100]]
+            rag_context = f"KNOWN PRODUCTS IN DATABASE (gunakan untuk koreksi typo):\n" + "\n".join(product_names)
+        
+        ocr_parse_prompt = f"""
+Kamu adalah asisten yang mengolah hasil OCR struk belanjaan grosir/reseller Indonesia.
+
+## TEKS OCR:
+{raw_text}
+
+{rag_context}
+
+## ATURAN PARSING GROSIR - SANGAT PENTING!
+
+### 1. PERBEDAAN QTY vs VARIANT:
+- **qty**: JUMLAH YANG DIBELI (angka berdiri sendiri, biasanya di kolom qty struk)
+- **variant**: UKURAN/ISI KEMASAN (angka yang menempel dengan kg/gr/L/isi)
+- **unit**: SATUAN PEMBELIAN (Karton/Dus/Bungkus/Pcs, BUKAN kg jika kg adalah variant!)
+
+### 2. CONTOH PARSING BENAR:
+
+KASUS KARTONAN:
+Struk: "Kara Santan Kartonan isi 36 | 1 | Rp 175.000"
+→ product_name: "Kara Santan Kartonan"
+→ variant: "Isi 36"
+→ qty: 1
+→ unit: "Karton"
+→ total_price: 175000
+
+KASUS UKURAN BERAT:
+Struk: "Singkong jadul ORI 1kg | 5 | Rp 17.000 | Rp 85.000"  
+→ product_name: "Singkong Jadul ORI"
+→ variant: "1kg"
+→ qty: 5 (BUKAN 1! Angka berdiri sendiri = qty)
+→ unit: "Bungkus" (BUKAN kg! kg adalah variant)
+→ unit_price: 17000
+→ total_price: 85000
+
+Struk: "Singkong jadul balado 1kg | 2 | Rp 20.000 | Rp 40.000"
+→ product_name: "Singkong Jadul Balado"
+→ variant: "1kg"
+→ qty: 2 (BUKAN 1!)
+→ unit: "Bungkus"
+→ total_price: 40000
+
+### 3. KOREKSI TYPO OCR:
+- "Jongkong" → "Singkong"
+- "Baladu" → "Balado"
+- "tomyurn" → "tomyum"
+- "Karuan" → "Kartonan"
+
+### 4. HITUNG QTY DARI HARGA (CRITICAL!):
+- Jika OCR tidak menangkap qty tapi ada harga satuan dan total:
+- **qty = total_price / unit_price**
+- Contoh: unit_price=17.000, total=85.000 → qty = 5
+- Contoh: unit_price=20.000, total=40.000 → qty = 2
+- JANGAN default ke qty=1 jika bisa dihitung!
+
+## OUTPUT FORMAT (JSON):
+{{
+  "action": "new",
+  "supplier_name": "Nama Toko",
+  "supplier_phone": "Nomor HP",
+  "supplier_address": "Alamat",
+  "transaction_date": "YYYY-MM-DD",
+  "receipt_number": "Nomor nota",
+  "items": [
+    {{"product_name":"Nama Produk", "variant":"ukuran/isi", "qty":1, "unit":"Karton/Bungkus/Pcs", "unit_price":0, "total_price":0, "notes":null}}
+  ],
+  "subtotal": 0,
+  "total": 0,
+  "payment_method": "Tunai/Transfer",
+  "follow_up_question": "Struk terbaca! Cek qty dan variannya ya Kak?",
+  "confidence_score": 0.85
+}}
+
+## PENTING - JANGAN SKIP PRODUK!
+- Ekstrak SEMUA produk yang ada di teks OCR
+- Jika ada produk yang tidak jelas, tetap masukkan dengan confidence rendah
+"""
+        
+        completion = client.chat.completions.create(
+            model=GROQ_TEXT_MODEL,
             messages=[
-                {"role": "system", "content": RECEIPT_SCAN_PROMPT},
-                {"role": "user", "content": [
-                    {"type": "text", "text": "Baca struk belanjaan ini dengan teliti. Ekstrak semua informasi toko, produk, dan total belanjaan."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
-                ]}
+                {"role": "system", "content": ocr_parse_prompt},
+                {"role": "user", "content": "Parse teks OCR di atas menjadi JSON. Koreksi semua typo OCR!"}
             ],
-            model=GROQ_VISION_MODEL,
-            temperature=0,
+            temperature=0.1,
             response_format={"type": "json_object"}
         )
-        ai_response = json.loads(chat_completion.choices[0].message.content)
         
-        print(f"[RECEIPT_OCR] Raw AI Response: {ai_response}")
+        ai_response = json.loads(completion.choices[0].message.content)
+        print(f"[RECEIPT_OCR] Step 2 - Parsed Result: {ai_response}")
+        
+        # ============================================
+        # STEP 3: Post-process with Fuzzy Matching (fallback)
+        # ============================================
+        if known_products:
+            ai_response = fuzzy_correct_product_names(ai_response, known_products)
         
         # Normalize items
         for item in ai_response.get('items', []):
@@ -529,6 +783,9 @@ async def parse_procurement_image(image_bytes, current_draft: dict = None, known
         final = check_draft_duplication(final, current_draft)
         final = add_supplier_reminder(final, current_draft)
         return final
+        
     except Exception as e:
         print(f"[RECEIPT_OCR] Error: {e}")
+        import traceback
+        traceback.print_exc()
         return {"action": "chat", "follow_up_question": "Gagal membaca struk. Pastikan gambar jelas dan coba lagi ya Kak! 📸", "items": []}

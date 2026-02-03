@@ -25,6 +25,11 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
   ProcurementDraft? _currentDraft;
   String? _transactionCode; // To store random invoice code
 
+  // Static variables to persist draft across navigation
+  static ProcurementDraft? _savedDraft;
+  static List<Map<String, dynamic>>? _savedChatItems;
+  static String? _savedTransactionCode;
+
   // Animation Controller for Pinned Draft Card
   late AnimationController _draftCardAnimationController;
   late Animation<double> _draftCardAnimation;
@@ -48,10 +53,24 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
 
     // Listen to text changes for Autocomplete
     _messageController.addListener(_onSearchChanged);
+
+    // Check for saved session and show resume modal
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_savedDraft != null && _savedDraft!.items.isNotEmpty) {
+        _showResumeSessionModal();
+      }
+    });
   }
 
   @override
   void dispose() {
+    // Save current session before leaving
+    if (_currentDraft != null && _currentDraft!.items.isNotEmpty) {
+      _savedDraft = _currentDraft;
+      _savedChatItems = List.from(_chatItems);
+      _savedTransactionCode = _transactionCode;
+    }
+
     _messageController.removeListener(_onSearchChanged);
     _debounce?.cancel();
     _draftCardAnimationController.dispose();
@@ -136,6 +155,37 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
 
     print("[APP_DEBUG] Sent User Message: $text");
 
+    // Handle special keywords "simpan" and "edit"
+    final lowerText = text.toLowerCase();
+    if (_currentDraft != null && _currentDraft!.items.isNotEmpty) {
+      if (lowerText == 'simpan' || lowerText == 'save') {
+        _messageController.clear();
+        _showConfirmationModal();
+        return;
+      }
+      if (lowerText == 'edit' || lowerText == 'ubah') {
+        _messageController.clear();
+        _showEditListBottomSheet();
+        return;
+      }
+    } else if (lowerText == 'simpan' ||
+        lowerText == 'edit' ||
+        lowerText == 'save' ||
+        lowerText == 'ubah') {
+      // No draft yet - inform user
+      setState(() {
+        _chatItems.add({"type": "user_pill", "text": text});
+        _chatItems.add({
+          "type": "system_text",
+          "text":
+              "Belum ada data untuk di-${lowerText == 'simpan' || lowerText == 'save' ? 'simpan' : 'edit'} Kak. Silakan input produk terlebih dahulu ya! 📝",
+        });
+      });
+      _messageController.clear();
+      _scrollToBottom();
+      return;
+    }
+
     setState(() {
       // Remove old action buttons when user sends new message
       _chatItems.removeWhere((item) => item['type'] == 'action_buttons');
@@ -159,6 +209,12 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
   void _handleApiResponse(ProcurementDraft? newDraft) {
     setState(() {
       _chatItems.removeWhere((item) => item['type'] == 'typing');
+      // Also remove loading message from image processing
+      _chatItems.removeWhere(
+        (item) =>
+            item['type'] == 'system_text' &&
+            (item['text'] as String).contains('menganalisis gambar'),
+      );
 
       if (newDraft != null) {
         // --- 1. STATE MANAGEMENT: IMMUTABLE MERGE STRATEGY ---
@@ -257,15 +313,29 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
         }
 
         // B. Tombol Aksi (Suggested Actions)
+        // Filter out Edit/Simpan jika draft sudah punya items (button ada di draft card)
         List<String> actions = newDraft.suggestedActions ?? [];
 
-        // Logic tambahan: Jika draft sudah ada isi, selalu tawarkan "Simpan" jika belum ada
-        if (hasData &&
-            !actions.contains("Simpan") &&
-            !actions.contains("Jadikan Supplier: ${_messageController.text}")) {
-          // Cek kondisi agar tombol simpan tidak muncul di tengah klarifikasi ambigu
-          if (newDraft.action != 'chat') {
-            actions.add("Simpan");
+        // Remove Edit & Simpan from action buttons (sudah ada di draft card)
+        if (_currentDraft != null && _currentDraft!.items.isNotEmpty) {
+          actions = actions
+              .where(
+                (action) =>
+                    action.toLowerCase() != 'edit' &&
+                    action.toLowerCase() != 'simpan' &&
+                    action.toLowerCase() != 'save',
+              )
+              .toList();
+        } else {
+          // Logic tambahan untuk flow tanpa draft
+          if (hasData &&
+              !actions.contains("Simpan") &&
+              !actions.contains(
+                "Jadikan Supplier: ${_messageController.text}",
+              )) {
+            if (newDraft.action != 'chat') {
+              actions.add("Simpan");
+            }
           }
         }
 
@@ -380,7 +450,12 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
   void _processImage(File imageFile) async {
     setState(() {
       _chatItems.removeWhere((item) => item['type'] == 'action_buttons');
-      _chatItems.add({"type": "user_pill", "text": "[Mengirim Foto Struk...]"});
+      _chatItems.add({"type": "user_image", "imagePath": imageFile.path});
+      // Custom loading message for image analysis
+      _chatItems.add({
+        "type": "system_text",
+        "text": "⏳ Mohon tunggu ya Kak, sistem sedang menganalisis gambar...",
+      });
       _chatItems.add({"type": "typing"});
     });
     _scrollToBottom();
@@ -773,24 +848,26 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
                           return Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    item.displayName,
-                                    style: GoogleFonts.montserrat(
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 12,
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item.displayName,
+                                      style: GoogleFonts.montserrat(
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 12,
+                                      ),
                                     ),
-                                  ),
-                                  Text(
-                                    "${item.qty.toStringAsFixed(0)} ${item.unit}",
-                                    style: GoogleFonts.montserrat(
-                                      fontSize: 11,
-                                      color: Colors.grey,
+                                    Text(
+                                      "${item.qty.toStringAsFixed(0)} ${item.unit} x ${_formatCurrency(item.unitPrice ?? (item.totalPrice / item.qty))}",
+                                      style: GoogleFonts.montserrat(
+                                        fontSize: 11,
+                                        color: Colors.grey,
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                               Text(
                                 "Rp ${_formatCurrency(item.totalPrice)}",
@@ -852,9 +929,9 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      onPressed: () {
+                      onPressed: () async {
                         Navigator.pop(context);
-                        _sendMessage(customText: "Simpan");
+                        await _commitTransaction();
                       },
                       child: Text(
                         "Simpan",
@@ -871,6 +948,330 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _commitTransaction() async {
+    if (_currentDraft == null) return;
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => WillPopScope(
+        onWillPop: () async => false,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 20),
+              Text(
+                "Menyimpan transaksi...",
+                style: GoogleFonts.montserrat(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final response = await _apiService.commitTransaction(_currentDraft!);
+
+      // Close loading dialog
+      if (mounted) Navigator.pop(context);
+
+      if (response.success) {
+        // Show success dialog
+        if (mounted) {
+          _showSuccessDialog(response);
+        }
+      } else {
+        // Show error snackbar
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                response.message,
+                style: GoogleFonts.montserrat(color: Colors.white),
+              ),
+              backgroundColor: Colors.red.shade400,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Close loading dialog on error
+      if (mounted) Navigator.pop(context);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "Error: $e",
+              style: GoogleFonts.montserrat(color: Colors.white),
+            ),
+            backgroundColor: Colors.red.shade400,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showSuccessDialog(CommitTransactionResponse response) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.check_circle,
+                color: Colors.green.shade600,
+                size: 48,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              "Transaksi Berhasil!",
+              style: GoogleFonts.montserrat(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              response.message,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.montserrat(
+                fontSize: 13,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            if (response.invoiceNumber != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  "No: ${response.invoiceNumber}",
+                  style: GoogleFonts.montserrat(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            ],
+            if (response.newProductsCreated != null &&
+                response.newProductsCreated! > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                "🆕 ${response.newProductsCreated} produk baru ditambahkan",
+                style: GoogleFonts.montserrat(
+                  fontSize: 11,
+                  color: Colors.blue.shade600,
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              onPressed: () {
+                Navigator.pop(context); // Close dialog
+                // Reset state and go back
+                setState(() {
+                  _currentDraft = null;
+                  _chatItems.clear();
+                  // Reset to initial welcome message
+                  _chatItems.add({
+                    "type": "system_note",
+                    "text": "Halo! 👋 Mau input barang apa hari ini?",
+                  });
+                  _transactionCode = null;
+                  // Also clear saved state
+                  _savedDraft = null;
+                  _savedChatItems = null;
+                  _savedTransactionCode = null;
+                });
+                // Hide draft card animation
+                _draftCardAnimationController.reverse();
+              },
+              child: Text(
+                "Selesai",
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showResumeSessionModal() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.history, color: AppColors.primary),
+            const SizedBox(width: 10),
+            Text(
+              "Sesi Sebelumnya",
+              style: GoogleFonts.montserrat(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Ditemukan draft pengadaan yang belum disimpan:",
+              style: GoogleFonts.montserrat(fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _savedDraft?.supplierName ?? "Supplier belum diset",
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "${_savedDraft?.items.length ?? 0} produk",
+                    style: GoogleFonts.montserrat(
+                      fontSize: 13,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "Apakah ingin melanjutkan proses sebelumnya atau buat baru?",
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          // Buat Baru button
+          TextButton(
+            onPressed: () {
+              // Clear saved session
+              _savedDraft = null;
+              _savedChatItems = null;
+              _savedTransactionCode = null;
+              Navigator.pop(context);
+            },
+            child: Text(
+              "Buat Baru",
+              style: GoogleFonts.montserrat(
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          // Lanjutkan button
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            onPressed: () {
+              // Restore saved session
+              setState(() {
+                _currentDraft = _savedDraft;
+                _transactionCode = _savedTransactionCode;
+                if (_savedChatItems != null) {
+                  _chatItems.clear();
+                  _chatItems.addAll(_savedChatItems!);
+                }
+                // Show draft card animation
+                if (_currentDraft != null) {
+                  _draftCardAnimationController.forward();
+                }
+              });
+              // Clear saved after restore
+              _savedDraft = null;
+              _savedChatItems = null;
+              _savedTransactionCode = null;
+              Navigator.pop(context);
+            },
+            child: Text(
+              "Lanjutkan",
+              style: GoogleFonts.montserrat(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -934,6 +1335,8 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
                           return _buildSystemText(item['text']);
                         case 'user_pill':
                           return _buildUserPill(item['text']);
+                        case 'user_image':
+                          return _buildUserImage(item['imagePath']);
                         case 'typing':
                           return _buildTypingIndicator();
                         // case 'draft_card': -> REMOVED from chat bubble
@@ -1068,7 +1471,9 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  "${item.qty.toStringAsFixed(0)} ${item.unit}",
+                                  (item.unitPrice ?? 0) > 0
+                                      ? "${item.qty.toStringAsFixed(0)} ${item.unit} x ${_formatCurrency(item.unitPrice ?? 0)}"
+                                      : "${item.qty.toStringAsFixed(0)} ${item.unit}",
                                   style: GoogleFonts.montserrat(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
@@ -1109,32 +1514,10 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
           const Divider(height: 1, thickness: 0.5),
           const SizedBox(height: 10),
 
-          // Footer: Subtotal & Total
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                "Subtotal",
-                style: GoogleFonts.montserrat(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              Text(
-                "Rp ${_formatCurrency(draft.subtotal ?? totalPrice)}",
-                style: GoogleFonts.montserrat(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-            ],
-          ),
           // Show discount if available (from receipt scanning)
           if (draft.discount != null && draft.discount! > 0)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(bottom: 4),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -1158,29 +1541,76 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
               ),
             ),
           // Total
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  "Total",
-                  style: GoogleFonts.montserrat(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "Total",
+                style: GoogleFonts.montserrat(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              Text(
+                "Rp ${_formatCurrency(draft.total ?? totalPrice)}",
+                style: GoogleFonts.montserrat(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+
+          // Edit & Simpan Buttons in Draft Card
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              // Edit Button
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => _showEditListBottomSheet(),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Colors.grey.shade400),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: Text(
+                    "Edit",
+                    style: GoogleFonts.montserrat(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                 ),
-                Text(
-                  "Rp ${_formatCurrency(draft.total ?? totalPrice)}",
-                  style: GoogleFonts.montserrat(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
+              ),
+              const SizedBox(width: 12),
+              // Simpan Button
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => _showConfirmationModal(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: Text(
+                    "Simpan",
+                    style: GoogleFonts.montserrat(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1378,6 +1808,124 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildUserImage(String imagePath) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: GestureDetector(
+        onTap: () => _showImageZoomModal(imagePath),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 20),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.60,
+            maxHeight: 200,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+              bottomLeft: Radius.circular(16),
+              bottomRight: Radius.circular(0),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+              bottomLeft: Radius.circular(16),
+              bottomRight: Radius.circular(0),
+            ),
+            child: Stack(
+              children: [
+                Image.file(File(imagePath), fit: BoxFit.cover),
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Tap untuk zoom',
+                          style: GoogleFonts.montserrat(
+                            fontSize: 10,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showImageZoomModal(String imagePath) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(0),
+          child: Stack(
+            children: [
+              // Zoomable Image
+              Center(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4.0,
+                  child: Image.file(File(imagePath), fit: BoxFit.contain),
+                ),
+              ),
+              // Close Button
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 16,
+                right: 16,
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.close,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

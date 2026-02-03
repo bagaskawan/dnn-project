@@ -35,3 +35,29 @@ class ProcurementDraft(BaseModel):
     # Merge confirmation fields
     merge_candidate: Optional[dict] = None  # Info about existing product match
     pending_items: Optional[List[dict]] = None  # Items waiting for merge confirmation
+
+
+# --- COMMIT TRANSACTION SCHEMAS ---
+class CommitTransactionInput(BaseModel):
+    """Input schema for committing a procurement transaction to database."""
+    supplier_name: str
+    supplier_phone: Optional[str] = None
+    supplier_address: Optional[str] = None
+    transaction_date: str
+    receipt_number: Optional[str] = None
+    items: List[ExtractedItem]
+    discount: Optional[float] = None
+    total: float
+    payment_method: Optional[str] = None
+    input_source: str = "OCR"  # OCR atau MANUAL
+    evidence_url: Optional[str] = None  # Path gambar struk
+
+
+class CommitTransactionResponse(BaseModel):
+    """Response schema after committing a transaction."""
+    success: bool
+    transaction_id: Optional[str] = None
+    invoice_number: Optional[str] = None
+    items_processed: Optional[int] = None
+    new_products_created: Optional[int] = None
+    message: str

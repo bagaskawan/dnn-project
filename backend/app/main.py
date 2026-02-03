@@ -5,8 +5,9 @@ import json
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from app.schemas import ProcurementDraft, ChatInput
+from app.schemas import ProcurementDraft, ChatInput, CommitTransactionInput, CommitTransactionResponse
 from app.services.ai_service import parse_procurement_text, parse_procurement_image
+from app.services.commit_service import commit_procurement_transaction
 
 # Load environment variables dari file .env
 load_dotenv()
@@ -15,11 +16,16 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     print("WARNING: DATABASE_URL not found in .env!")
 else:
-    if "prepared_statement_cache_size" not in DATABASE_URL:
-        separator = "&" if "?" in DATABASE_URL else "?"
-        DATABASE_URL += f"{separator}prepared_statement_cache_size=0"
+    print(f"[DB] Using DATABASE_URL (redacted): ...{DATABASE_URL[-30:]}")
 
-database = databases.Database(DATABASE_URL)
+# Create database with statement_cache_size=0 for pgbouncer compatibility
+# The databases library passes these options directly to asyncpg
+database = databases.Database(
+    DATABASE_URL,
+    min_size=1,
+    max_size=5,
+    statement_cache_size=0,  # Critical for pgbouncer
+) if DATABASE_URL else None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -211,3 +217,36 @@ async def parse_image_endpoint(file: UploadFile = File(...), current_draft_str: 
     )
     
     return result
+
+
+# --- ENDPOINT COMMIT TRANSACTION ---
+@app.post("/api/v1/transactions/commit", response_model=CommitTransactionResponse)
+async def commit_transaction_endpoint(data: CommitTransactionInput):
+    """
+    Commit a procurement transaction to the database.
+    This saves data to: contacts, transactions, products, transaction_items, stock_ledger.
+    """
+    print(f"[COMMIT API] Received commit request for supplier: {data.supplier_name}")
+    print(f"[COMMIT API] Items count: {len(data.items)}")
+    
+    # Convert Pydantic items to dict for the service
+    items_dict = [item.dict() for item in data.items]
+    
+    result = await commit_procurement_transaction(
+        database=database,
+        supplier_name=data.supplier_name,
+        supplier_phone=data.supplier_phone,
+        supplier_address=data.supplier_address,
+        transaction_date=data.transaction_date,
+        receipt_number=data.receipt_number,
+        items=items_dict,
+        discount=data.discount,
+        total=data.total,
+        payment_method=data.payment_method,
+        input_source=data.input_source,
+        evidence_url=data.evidence_url
+    )
+    
+    print(f"[COMMIT API] Result: {result}")
+    
+    return CommitTransactionResponse(**result)
