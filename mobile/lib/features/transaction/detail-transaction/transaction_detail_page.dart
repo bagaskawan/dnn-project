@@ -1,12 +1,76 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/colors.dart';
+import '../../../core/services/api_service.dart';
 import '../../home/home_view_model.dart';
 
-class TransactionDetailPage extends StatelessWidget {
+class TransactionDetailPage extends StatefulWidget {
   final Transaction transaction;
 
   const TransactionDetailPage({super.key, required this.transaction});
+
+  @override
+  State<TransactionDetailPage> createState() => _TransactionDetailPageState();
+}
+
+class _TransactionDetailPageState extends State<TransactionDetailPage> {
+  final ApiService _apiService = ApiService();
+  List<TransactionItem> _items = [];
+  bool _isLoadingItems = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchItems();
+  }
+
+  Future<void> _fetchItems() async {
+    // If transaction already has items (from mock data), use them
+    if (widget.transaction.items.isNotEmpty) {
+      setState(() {
+        _items = widget.transaction.items;
+      });
+      return;
+    }
+
+    // Otherwise fetch from API using transaction ID
+    if (widget.transaction.id.isEmpty) return;
+
+    setState(() {
+      _isLoadingItems = true;
+    });
+
+    try {
+      final detail = await _apiService.getTransactionDetail(
+        widget.transaction.id,
+      );
+      if (detail != null) {
+        setState(() {
+          _items = detail.items
+              .map(
+                (apiItem) => TransactionItem(
+                  name: apiItem.variant != null
+                      ? '${apiItem.productName} (${apiItem.variant})'
+                      : apiItem.productName,
+                  quantity: apiItem.qty.toInt(),
+                  unit: apiItem.unit,
+                  price: apiItem.unitPrice.toInt(),
+                ),
+              )
+              .toList();
+        });
+      }
+    } catch (e) {
+      print('Error fetching transaction items: $e');
+    } finally {
+      setState(() {
+        _isLoadingItems = false;
+      });
+    }
+  }
+
+  // Getter for easier access
+  Transaction get transaction => widget.transaction;
 
   @override
   Widget build(BuildContext context) {
@@ -106,9 +170,9 @@ class TransactionDetailPage extends StatelessWidget {
                               letterSpacing: -0.5,
                             ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 6),
                           Text(
-                            '#${transaction.invoiceNumber} • ${_formatDate(transaction.date)}',
+                            '#${transaction.invoiceNumber}',
                             style: GoogleFonts.inter(
                               color: const Color(0xFF6B7280), // Soft Grey
                               fontSize: 13,
@@ -176,26 +240,24 @@ class TransactionDetailPage extends StatelessWidget {
 
                     // 3. Itemized List Section
                     // Only show title if there are items, but design implies always structure
-                    if (transaction.items.isNotEmpty) ...[
-                      // No explicit "Rincian Barang" title in the image provided, the items start direct.
-                      // But user request said: "Section title 'Rincian Barang'".
-                      // I will add it subtly or skip it to match image which looks cleaner.
-                      // Let's add it with padding if preferred.
-                      // Searching user request text: "Section title 'Rincian Barang'" -> Yes.
-                      // Searching image: No "Rincian Barang" header explicitly visible in main flow, but maybe collapsed?
-                      // I'll stick to the user text request for structure.
-
-                      // Actually, looking at the image: It lists items directly under Contact.
-                      // I will skip the explicit header "Rincian Barang" to match the clean image aesthetic unless needed.
-                      // Wait, I should follow the text prompt "Section layout" number 3.
-                      // Okay, I will add it but maybe very subtle.
-
-                      // _buildDivider(), // Divider before items? Use dashed?
-                      // Image shows dashed divider after header, allowing flow.
+                    if (_isLoadingItems) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
+                        ),
+                        child: Column(
+                          children: List.generate(
+                            3,
+                            (index) => _buildItemSkeletonRow(),
+                          ),
+                        ),
+                      ),
+                    ] else if (_items.isNotEmpty) ...[
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24),
                         child: Column(
-                          children: transaction.items
+                          children: _items
                               .map((item) => _buildItem(item))
                               .toList(),
                         ),
@@ -206,91 +268,6 @@ class TransactionDetailPage extends StatelessWidget {
                     _buildSolidDivider(),
 
                     // 4. Receipt Footer
-                    Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF9FAFB),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'METODE PEMBAYARAN',
-                                      style: GoogleFonts.inter(
-                                        color: Colors.grey.shade400,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      transaction
-                                          .paymentMethod, // e.g. Transfer Bank
-                                      style: GoogleFonts.inter(
-                                        color: const Color(0xFF1A1A1A),
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.shade50,
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.check_circle,
-                                        size: 14,
-                                        color: Colors.green,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'LUNAS',
-                                        style: GoogleFonts.inter(
-                                          color: Colors.green.shade700,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          // Barcode decoration (Mock)
-                          Opacity(
-                            opacity: 0.2,
-                            child: Image.network(
-                              'https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/EAN13.svg/1200px-EAN13.svg.png',
-                              height: 40,
-                              width: double.infinity,
-                              fit: BoxFit.cover,
-                              errorBuilder: (c, o, s) => Container(
-                                height: 40,
-                                color: Colors.grey.shade200,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -342,7 +319,7 @@ class TransactionDetailPage extends StatelessWidget {
                   item.name,
                   style: GoogleFonts.inter(
                     color: const Color(0xFF1A1A1A),
-                    fontSize: 15,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -351,7 +328,7 @@ class TransactionDetailPage extends StatelessWidget {
                   '${item.quantity} ${item.unit} × Rp ${_formatNumber(item.price)}',
                   style: GoogleFonts.inter(
                     color: const Color(0xFF6B7280),
-                    fontSize: 13,
+                    fontSize: 11,
                     fontWeight: FontWeight.w400,
                   ),
                 ),
@@ -370,7 +347,7 @@ class TransactionDetailPage extends StatelessWidget {
                           item.conversionNote!,
                           style: GoogleFonts.inter(
                             color: Colors.red.shade400,
-                            fontSize: 12,
+                            fontSize: 11,
                             fontWeight: FontWeight.w400,
                             fontStyle: FontStyle.italic,
                           ),
@@ -382,11 +359,11 @@ class TransactionDetailPage extends StatelessWidget {
             ),
           ),
           Text(
-            _formatNumber(item.subtotal),
+            "Rp " + _formatNumber(item.subtotal),
             style: GoogleFonts.inter(
               color: const Color(0xFF1A1A1A),
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -649,6 +626,49 @@ class TransactionDetailPage extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildItemSkeletonRow() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 140,
+                  height: 13,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: 100,
+                  height: 11,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            width: 80,
+            height: 13,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

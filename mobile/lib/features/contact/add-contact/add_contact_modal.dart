@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/colors.dart';
+import '../../../core/services/api_service.dart';
 
 class AddContactModal extends StatefulWidget {
   const AddContactModal({super.key});
@@ -16,6 +17,9 @@ class _AddContactModalState extends State<AddContactModal> {
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
   final _noteController = TextEditingController();
+
+  bool _isLoading = false;
+  final _apiService = ApiService();
 
   @override
   void dispose() {
@@ -109,7 +113,10 @@ class _AddContactModalState extends State<AddContactModal> {
                     controller: _phoneController,
                     hint: 'Masukkan nomor telepon',
                     keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      PhoneInputFormatter(),
+                    ],
                   ),
                   const SizedBox(height: 16),
 
@@ -147,15 +154,7 @@ class _AddContactModalState extends State<AddContactModal> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Kontak berhasil disimpan'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
+                onPressed: _isLoading ? null : _handleSubmit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   elevation: 0,
@@ -163,14 +162,23 @@ class _AddContactModalState extends State<AddContactModal> {
                     borderRadius: BorderRadius.circular(25),
                   ),
                 ),
-                child: Text(
-                  'Simpan Kontak',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
+                child: _isLoading
+                    ? Text(
+                        'Menyimpan ...',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(
+                        'Simpan Kontak',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
               ),
             ),
           ),
@@ -261,6 +269,101 @@ class _AddContactModalState extends State<AddContactModal> {
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _handleSubmit() async {
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Nama kontak wajib diisi')));
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    // Map 'pelanggan'/'supplier' to 'CUSTOMER'/'SUPPLIER'
+    final type = _selectedType == 'pelanggan' ? 'CUSTOMER' : 'SUPPLIER';
+
+    final payload = {
+      'name': _nameController.text.trim(),
+      'type': type,
+      'phone': _phoneController.text
+          .trim(), // Send formatted or clean? Usually backend wants clean, but let's send what user sees for now or clean it.
+      'address': _addressController.text.trim(),
+      'notes': _noteController.text.trim(),
+    };
+
+    // Clean phone number for backend if necessary, or keep format
+    // For now, sending as is, database is varchar.
+
+    print("Submitting Contact: $payload");
+
+    final result = await _apiService.createContact(payload);
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (mounted) {
+      if (result != null) {
+        Navigator.pop(context, result); // Return the new contact object
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Kontak berhasil disimpan'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gagal menyimpan kontak'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+}
+
+class PhoneInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    String newText = newValue.text;
+
+    // Remove all non-digits to get raw numbers
+    String cleanText = newText.replaceAll(RegExp(r'\D'), '');
+
+    // Allow empty
+    if (cleanText.isEmpty) {
+      return newValue;
+    }
+
+    // 1. Force start with '0'
+    // If the user types a non-zero as the first digit, prepend '0'.
+    if (!cleanText.startsWith('0')) {
+      cleanText = '0$cleanText';
+    }
+
+    // 2. Add dashes every 4 digits
+    final buffer = StringBuffer();
+    for (int i = 0; i < cleanText.length; i++) {
+      if (i > 0 && i % 4 == 0) {
+        buffer.write('-');
+      }
+      buffer.write(cleanText[i]);
+    }
+
+    final formattedText = buffer.toString();
+
+    return TextEditingValue(
+      text: formattedText,
+      selection: TextSelection.collapsed(offset: formattedText.length),
     );
   }
 }

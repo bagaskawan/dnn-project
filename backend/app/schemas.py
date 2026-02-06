@@ -61,3 +61,85 @@ class CommitTransactionResponse(BaseModel):
     items_processed: Optional[int] = None
     new_products_created: Optional[int] = None
     message: str
+
+
+# --- TRANSACTION LIST/DETAIL SCHEMAS ---
+
+class TransactionListItem(BaseModel):
+    """Schema for transaction list item (home page)."""
+    id: str
+    type: str  # "IN" for pengadaan, "OUT" for penjualan
+    transaction_date: str
+    total_amount: float
+    invoice_number: Optional[str] = None
+    payment_method: Optional[str] = None
+    contact_name: str
+    contact_phone: Optional[str] = None
+    contact_address: Optional[str] = None
+    created_at: str
+
+
+class TransactionItemDetail(BaseModel):
+    """Schema for transaction item detail."""
+    id: str
+    product_name: str
+    variant: Optional[str] = None
+    qty: float
+    unit: str
+    unit_price: float
+    subtotal: float
+    notes: Optional[str] = None
+
+
+class TransactionDetailResponse(BaseModel):
+    """Full transaction detail including items."""
+    id: str
+    type: str
+    transaction_date: str
+    total_amount: float
+    invoice_number: Optional[str] = None
+    payment_method: Optional[str] = None
+    contact_name: str
+    contact_phone: Optional[str] = None
+    contact_address: Optional[str] = None
+    created_at: str
+    items: List[TransactionItemDetail]
+
+
+# --- CONTACT SCHEMAS ---
+
+class ContactItem(BaseModel):
+    """Schema for contact list item."""
+    id: str
+    name: str
+    type: str  # "CUSTOMER" atau "SUPPLIER"
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: str
+
+
+class ContactCreateInput(BaseModel):
+    """Schema for creating a new contact."""
+    name: str
+    type: str  # "CUSTOMER" or "SUPPLIER"
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ContactUpdateInput(BaseModel):
+    """Schema for updating contact."""
+    name: str
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    notes: Optional[str] = None
+
+    address: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ContactStats(BaseModel):
+    """Schema for contact transaction statistics."""
+    count: int
+    total_amount: float

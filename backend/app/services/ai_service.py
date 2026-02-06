@@ -189,69 +189,98 @@ For each product, separate into 3 components:
 """
 
 # --- RECEIPT SCANNING PROMPT (OCR) ---
+# --- RECEIPT SCANNING PROMPT (OCR) ---
 RECEIPT_SCAN_PROMPT = """
 Kamu adalah asisten OCR yang ahli membaca struk belanjaan grosir/reseller Indonesia.
 
 ## TUGAS UTAMA:
-Ekstrak data transaksi. Hati-hati dengan **Pola Reseller** (Barang Dus/Bal/Karton).
+Ekstrak data transaksi dari teks struk.
 
-## ATURAN KHUSUS (CRITICAL LOGIC):
+## 1. ATURAN PARSING SUPPLIER (HEADER STRUK) - CRITICAL!
 
-1. **KASUS "ISI" / KARTONAN (Contoh: "Kara Santan Isi 36")**
-   - Jika teks mengandung kata "Isi" diikuti angka besar (12, 24, 36, 48, dll).
-   - **QTY:** Adalah jumlah KEMASAN LUAR (biasanya angka kecil di awal baris, misal 1, 2, 5).
-   - **VARIANT:** Masukkan info isi ke sini (contoh: "Isi 36").
-   - **UNIT:** Gunakan satuan kemasan besar ("Dus", "Karton", "Bal"). JANGAN pakai "Pcs".
-   -> *Contoh Struk:* "2 Kara Santan Isi 36"
-   -> *Output:* Qty: 2 | Unit: Dus | Variant: Isi 36 | Product: Kara Santan
+Fokus pisahkan **Nama Toko** dan **Alamat**. Jangan digabung!
 
-2. **KASUS UKURAN BERAT (Contoh: "Singkong 5 1kg" atau "5x 1kg")**
-   - Ada dua angka berdekatan? Angka yang lebih kecil/bulat biasanya QTY. Angka dengan satuan berat (kg/gr) adalah VARIANT.
-   - **JANGAN KALIKAN.** Jika tertulis "5 1kg", artinya 5 Bungkus ukuran 1kg. BUKAN 5kg curah.
-   - **QTY:** 5
-   - **VARIANT:** 1kg
-   - **UNIT:** "Bungkus" atau "Pcs" (Kecuali memang beli curah kiloan).
-   -> *Contoh Struk:* "Singkong Jadul Ori 5 1kg"
-   -> *Output:* Qty: 5 | Unit: Bungkus | Variant: 1kg | Product: Singkong Jadul Ori
+### POLA IDENTIFIKASI:
+1.  **supplier_name (Nama Toko):**
+    * Biasanya HANYA ada di **Baris Pertama** teks.
+    * Format umum: "Toko X", "UD X", "CV X", "Warung X", atau Nama Brand.
+    * **PANTANGAN:** Jangan masukkan kata-kata alamat ke dalam nama toko.
 
-3. **KASUS HARGA (CRITICAL - HITUNG QTY!)**
-   - Jika OCR **TIDAK MENANGKAP QTY** tapi ada **HARGA SATUAN dan TOTAL**:
-   - **HITUNG QTY: `qty = total_price / unit_price`**
-   -> *Contoh:* unit_price=17.000, total=85.000 → qty = 85000/17000 = **5**
-   -> *Contoh:* unit_price=20.000, total=40.000 → qty = 40000/20000 = **2**
-   - Jika hasil bukan bilangan bulat, bulatkan ke bawah.
-   - JANGAN default ke qty=1 jika bisa dihitung dari harga!
+2.  **supplier_address (Alamat):**
+    * Biasanya mulai dari **Baris Kedua**.
+    * Ciri khas kata kunci alamat: "Jl.", "Jalan", "Raya", "Kec.", "Kab.", "Kota", "Blok", "No.".
 
-## FORMAT OUTPUT (JSON):
+### CONTOH KASUS NYATA (PERHATIKAN BEDANYA):
+
+**Kasus A (Jalan Raya):**
+*Teks OCR:*
+`Toko Yunden Jaya`
+`Jl. Raya Nanjung no 8`
+
+*Salah (JANGAN SEPERTI INI):*
+`supplier_name`: "Toko Yunden Jaya Jl. Raya" ❌ (Salah ambil baris kedua)
+
+*Benar:*
+`supplier_name`: "Toko Yunden Jaya" ✅
+`supplier_address`: "Jl. Raya Nanjung no 8" ✅
+
+**Kasus B (Tanpa Label Jalan):**
+*Teks OCR:*
+`Berkah Abadi`
+`Pasar Induk Blok C-12`
+
+*Benar:*
+`supplier_name`: "Berkah Abadi"
+`supplier_address`: "Pasar Induk Blok C-12"
+
+---
+
+## 2. ATURAN PARSING PRODUK (GROSIR)
+
+### QTY vs VARIANT:
+- **qty**: Angka yang berdiri sendiri (jumlah barang).
+- **variant**: Angka yang menempel satuan (kg/gr/L/isi/pcs dalam nama).
+- **unit**: Satuan wadah (Karton/Dus/Bungkus/Bal).
+
+### CONTOH PRODUK:
+Teks: `Kara Santan Kartonan isi 36 | 1 | 175.000`
+-> Product: "Kara Santan Kartonan", Variant: "Isi 36", Qty: 1, Unit: "Karton"
+
+Teks: `Singkong jadul ORI 1kg | 5 | 85.000`
+-> Product: "Singkong Jadul ORI", Variant: "1kg", Qty: 5, Unit: "Bungkus"
+
+### HITUNG QTY DARI HARGA:
+Jika OCR gagal baca Qty, hitung manual: `qty = total_price / unit_price`.
+Contoh: `17.000 x ... = 85.000` -> Qty otomatis **5**.
+
+---
+
+## OUTPUT FORMAT (JSON):
 {
   "action": "new",
-  "supplier_name": "Nama Toko",
-  "supplier_phone": "No HP/WA",
-  "supplier_address": "Alamat",
+  "supplier_name": "Nama Toko (Hanya Nama)",
+  "supplier_phone": "Nomor HP/WA",
+  "supplier_address": "Alamat Lengkap",
   "transaction_date": "YYYY-MM-DD",
+  "receipt_number": "Nomor Invoice",
   "items": [
     {
-      "product_name": "Nama Produk Inti",
-      "variant": "Ukuran/Isi (cth: 1kg, Isi 36)",
+      "product_name": "Nama Produk", 
+      "variant": "Ukuran/Isi", 
       "qty": 0, 
-      "unit": "Satuan (Dus/Bungkus/Pcs/Kg)",
-      "unit_price": 0,
-      "total_price": 0,
-      "notes": "Catatan lain"
+      "unit": "Satuan", 
+      "unit_price": 0, 
+      "total_price": 0, 
+      "notes": null
     }
   ],
   "subtotal": 0,
   "discount": 0,
   "total": 0,
   "payment_method": "Tunai/Transfer",
-  "follow_up_question": "Struk terbaca! Cek qty dan variannya ya Kak?",
+  "follow_up_question": "Struk terbaca! Cek nama toko dan produknya ya Kak?",
   "confidence_score": 0.9
 }
-
-## PENTING - JANGAN SKIP PRODUK!
-- Ekstrak SEMUA produk yang ada di teks OCR
-- Jika ada produk yang tidak jelas, tetap masukkan dengan confidence rendah
-- Jangan abaikan produk apapun!
 """
 
 MISSING_SUPPLIER_INSTRUCTION = """
@@ -672,6 +701,36 @@ Kamu adalah asisten yang mengolah hasil OCR struk belanjaan grosir/reseller Indo
 {raw_text}
 
 {rag_context}
+
+## ATURAN PARSING SUPPLIER - SANGAT PENTING!
+
+### 0. PISAHKAN NAMA SUPPLIER DAN ALAMAT (CRITICAL!):
+- **supplier_name**: HANYA nama toko/usaha (Toko X, UD X, CV X, PT X, Pak/Bu X)
+- **supplier_address**: Alamat lengkap yang biasanya diawali dengan:
+  - "Jl.", "Jln.", "Jalan" (nama jalan)
+  - "Kec.", "Kecamatan" (kecamatan)
+  - "Kab.", "Kabupaten", "Kota" (kota/kabupaten)
+  - "No.", "Blok", "RT", "RW" (nomor rumah/blok)
+
+CONTOH BENAR:
+Struk Header:
+```
+Toko Yunden Jaya
+Jl. Raya Nanjung no.8
+kec. Margaasih Kab. Bandung
+```
+→ supplier_name: "Toko Yunden Jaya" (HANYA ini!)
+→ supplier_address: "Jl. Raya Nanjung no.8, kec. Margaasih Kab. Bandung"
+
+CONTOH SALAH:
+→ supplier_name: "Toko Yunden Jaya Raya" ❌ (kata "Raya" adalah bagian dari alamat!)
+
+### TIPS IDENTIFIKASI:
+- Nama supplier biasanya di BARIS PERTAMA dan berformat "Toko/UD/CV + Nama"
+- Alamat biasanya di baris KEDUA dan KETIGA
+- JANGAN gabungkan baris alamat ke nama supplier!
+
+---
 
 ## ATURAN PARSING GROSIR - SANGAT PENTING!
 

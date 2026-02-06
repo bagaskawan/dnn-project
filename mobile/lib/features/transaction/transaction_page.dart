@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/colors.dart';
+import '../../core/services/api_service.dart';
 import '../home/home_view_model.dart';
 import 'detail-transaction/transaction_detail_page.dart'; // Import TransactionDetailPage
 
@@ -30,14 +31,51 @@ class _TransactionContentState extends State<TransactionContent>
 
   final List<String> _filterOptions = ['Hari Ini', '7 Hari', '30 Hari'];
 
-  // Use data from HomeViewModel structure
-  final List<Transaction> _transactions = HomeViewModel().transactions;
+  // Transactions loaded from API
+  final ApiService _apiService = ApiService();
+  List<Transaction> _transactions = [];
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this, initialIndex: 1);
     _tabController.addListener(() => setState(() {}));
+    _fetchTransactions();
+  }
+
+  Future<void> _fetchTransactions() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final apiTransactions = await _apiService.getTransactions(limit: 50);
+      setState(() {
+        _transactions = apiTransactions
+            .map(
+              (item) => Transaction.fromApi({
+                'id': item.id,
+                'type': item.type,
+                'transaction_date': item.transactionDate,
+                'total_amount': item.totalAmount,
+                'invoice_number': item.invoiceNumber,
+                'payment_method': item.paymentMethod,
+                'contact_name': item.contactName,
+                'contact_phone': item.contactPhone,
+                'contact_address': item.contactAddress,
+                'created_at': item.createdAt,
+              }),
+            )
+            .toList();
+      });
+    } catch (e) {
+      print('Error fetching transactions: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -342,6 +380,14 @@ class _TransactionContentState extends State<TransactionContent>
   }
 
   Widget _buildTransactionList() {
+    if (_isLoading) {
+      return ListView.builder(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 100),
+        itemCount: 6,
+        itemBuilder: (context, index) => _buildTransactionSkeletonItem(),
+      );
+    }
+
     final transactions = _filteredTransactions;
 
     if (transactions.isEmpty) {
@@ -370,7 +416,7 @@ class _TransactionContentState extends State<TransactionContent>
     // Group by date
     final Map<String, List<Transaction>> grouped = {};
     for (var tx in transactions) {
-      final date = tx.date;
+      final date = tx.created_at;
       final key = '${date.day} ${_getMonthName(date.month)} ${date.year}';
       grouped.putIfAbsent(key, () => []);
       grouped[key]!.add(tx);
@@ -410,7 +456,7 @@ class _TransactionContentState extends State<TransactionContent>
     final icon = isPengadaan
         ? Icons.south_west
         : Icons.north_east; // Pengadaan = Masuk
-    final date = tx.date;
+    final date = tx.created_at;
 
     return GestureDetector(
       onTap: () {
@@ -498,5 +544,59 @@ class _TransactionContentState extends State<TransactionContent>
       'Desember',
     ];
     return months[month - 1];
+  }
+
+  Widget _buildTransactionSkeletonItem() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          // Icon skeleton
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.grey.shade200,
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Text skeleton
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 120,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  width: 50,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Amount skeleton
+          Container(
+            width: 80,
+            height: 12,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

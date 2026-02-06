@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/services/api_service.dart';
 
 enum TransactionType {
   pengadaan, // Procurement (Green Arrow per user request)
@@ -24,8 +25,9 @@ class TransactionItem {
 }
 
 class Transaction {
+  final String id; // NEW: transaction ID for detail fetching
   final String name; // Store/Consumer Name
-  final DateTime date; // Transaction time
+  final DateTime created_at; // Transaction time
   final double amount; // Nominal
   final TransactionType type;
   final String invoiceNumber;
@@ -33,8 +35,9 @@ class Transaction {
   final List<TransactionItem> items;
 
   Transaction({
+    this.id = '', // Default empty for backward compatibility
     required this.name,
-    required this.date,
+    required this.created_at,
     required this.amount,
     required this.type,
     required this.invoiceNumber,
@@ -46,6 +49,32 @@ class Transaction {
 
   final String customerPhone;
   final String customerAddress;
+
+  /// Factory constructor from API response
+  factory Transaction.fromApi(Map<String, dynamic> json) {
+    // Parse created_at as DateTime
+    DateTime parsedCreatedAt = DateTime.now();
+    if (json['created_at'] != null) {
+      try {
+        parsedCreatedAt = DateTime.parse(json['created_at']);
+      } catch (_) {}
+    }
+
+    return Transaction(
+      id: json['id'] ?? '',
+      name: json['contact_name'] ?? 'Unknown',
+      created_at: parsedCreatedAt,
+      amount: (json['total_amount'] ?? 0).toDouble(),
+      type: json['type'] == 'OUT'
+          ? TransactionType.penjualan
+          : TransactionType.pengadaan,
+      invoiceNumber: json['invoice_number'] ?? '',
+      paymentMethod: json['payment_method'] ?? 'Tunai',
+      items: [], // Items loaded separately on detail page
+      customerPhone: json['contact_phone'] ?? '',
+      customerAddress: json['contact_address'] ?? '',
+    );
+  }
 }
 
 class QuickTransferContact {
@@ -157,102 +186,45 @@ class HomeViewModel extends ChangeNotifier {
     ),
   ];
 
-  List<Transaction> transactions = [
-    Transaction(
-      name: "Toko Berkah Jaya",
-      date: DateTime.now().subtract(const Duration(hours: 2)),
-      amount: 1500000,
-      type: TransactionType.pengadaan,
-      invoiceNumber: "INV-20260121-001",
-      paymentMethod: "Transfer Bank (Lunas)",
-      items: [
-        TransactionItem(
-          name: "Keripik Singkong Balado",
-          quantity: 3,
-          unit: "Bal",
-          price: 500000,
-          conversionNote: "Setara dengan ≈ 60 Pcs di stok",
-        ),
-      ],
-      customerPhone: "0812-3333-4444",
-      customerAddress: "Jl. Pasar Lama No. 88, Jakarta Selatan",
-    ),
-    Transaction(
-      name: "Budi Santoso",
-      date: DateTime.now().subtract(const Duration(hours: 4)),
-      amount: 350000,
-      type: TransactionType.penjualan,
-      invoiceNumber: "INV-20260121-002",
-      paymentMethod: "Tunai",
-      items: [
-        TransactionItem(
-          name: "Alpukat Mentega Super",
-          quantity: 10,
-          unit: "Kg",
-          price: 35000,
-        ),
-      ],
-      customerPhone: "0819-8888-7777",
-      customerAddress: "Perumahan Indah Permai Blok A3, Bekasi",
-    ),
-    Transaction(
-      name: "CV. Mitra Abadi",
-      date: DateTime.now().subtract(const Duration(hours: 5)),
-      amount: 2100000,
-      type: TransactionType.pengadaan,
-      invoiceNumber: "INV-20260121-003",
-      paymentMethod: "Transfer Bank",
-      items: [
-        TransactionItem(
-          name: "Minyak Goreng Tropical",
-          quantity: 5,
-          unit: "Karton",
-          price: 220000,
-        ),
-        TransactionItem(
-          name: "Gula Pasir Gulaku",
-          quantity: 2,
-          unit: "Karung 50kg",
-          price: 500000,
-        ),
-      ],
-      customerPhone: "021-555-6789",
-      customerAddress: "Kawasan Industri Pulo Gadung, Jakarta Timur",
-    ),
-    Transaction(
-      name: "Siti Aminah",
-      date: DateTime.now().subtract(const Duration(days: 1, hours: 1)),
-      amount: 125000,
-      type: TransactionType.penjualan,
-      invoiceNumber: "INV-20260120-001",
-      paymentMethod: "Tunai",
-      items: [],
-      customerPhone: "0856-9999-0000",
-      customerAddress: "Komplek Melati Indah C4, Depok",
-    ),
-    Transaction(
-      name: "UD. Sumber Rejeki",
-      date: DateTime.now().subtract(const Duration(days: 1, hours: 3)),
-      amount: 850000,
-      type: TransactionType.pengadaan,
-      invoiceNumber: "INV-20260120-002",
-      paymentMethod: "Transfer Bank",
-      items: [],
-      customerPhone: "0813-1234-5678",
-      customerAddress: "Jl. Raya Bogor KM 30",
-    ),
-    Transaction(
-      name: "Warung Bu Dewi",
-      date: DateTime.now().subtract(const Duration(days: 1, hours: 6)),
-      amount: 450000,
-      type: TransactionType.penjualan,
-      invoiceNumber: "INV-20260120-003",
-      paymentMethod: "Tunai",
-      items: [],
-      customerPhone: "0878-1111-2222",
-      customerAddress: "Jl. Cempaka Putih Tengah, Jakarta Pusat",
-    ),
-  ];
+  // Transactions now loaded from API
+  List<Transaction> transactions = [];
+  bool isLoadingTransactions = false;
+  String? transactionError;
+
+  final ApiService _apiService = ApiService();
+
+  /// Fetch transactions from backend API
+  Future<void> fetchTransactions() async {
+    isLoadingTransactions = true;
+    transactionError = null;
+    notifyListeners();
+
+    try {
+      final apiTransactions = await _apiService.getTransactions(limit: 20);
+      transactions = apiTransactions
+          .map(
+            (item) => Transaction.fromApi({
+              'id': item.id,
+              'type': item.type,
+              'transaction_date': item.transactionDate,
+              'total_amount': item.totalAmount,
+              'invoice_number': item.invoiceNumber,
+              'payment_method': item.paymentMethod,
+              'contact_name': item.contactName,
+              'contact_phone': item.contactPhone,
+              'contact_address': item.contactAddress,
+              'created_at': item.createdAt,
+            }),
+          )
+          .toList();
+    } catch (e) {
+      print('Error fetching transactions: $e');
+      transactionError = 'Gagal memuat transaksi';
+    } finally {
+      isLoadingTransactions = false;
+      notifyListeners();
+    }
+  }
 
   void toggleBalanceVisibility() {
     isBalanceVisible = !isBalanceVisible;

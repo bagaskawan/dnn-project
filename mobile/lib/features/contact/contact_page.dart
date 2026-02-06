@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/colors.dart';
+import '../../core/services/api_service.dart';
 import 'add-contact/add_contact_modal.dart';
 import 'detail-contact/contact_detail_page.dart';
 
@@ -26,46 +27,40 @@ class _ContactContentState extends State<ContactContent>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
+  final ApiService _apiService = ApiService();
 
-  // Sample contacts
-  final List<Map<String, dynamic>> _contacts = [
-    {
-      'name': 'Toko Makmur',
-      'type': 'pelanggan',
-      'phone': '081234567890',
-      'initial': 'TM',
-    },
-    {
-      'name': 'CV. Berkah Jaya',
-      'type': 'supplier',
-      'phone': '089876543210',
-      'initial': 'BJ',
-    },
-    {
-      'name': 'Warung Sejahtera',
-      'type': 'pelanggan',
-      'phone': '085678901234',
-      'initial': 'WS',
-    },
-    {
-      'name': 'PT. Sentosa Abadi',
-      'type': 'supplier',
-      'phone': '081345678901',
-      'initial': 'SA',
-    },
-    {
-      'name': 'Kios Bahagia',
-      'type': 'pelanggan',
-      'phone': '087789012345',
-      'initial': 'KB',
-    },
-  ];
+  // Contacts from API
+  List<ContactItem> _contacts = [];
+  bool _isLoading = true;
+  bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this, initialIndex: 1);
     _tabController.addListener(() => setState(() {}));
+    _loadContacts();
+  }
+
+  Future<void> _loadContacts() async {
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
+
+    try {
+      final contacts = await _apiService.getContacts();
+      setState(() {
+        _contacts = contacts;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading contacts: $e');
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+      });
+    }
   }
 
   @override
@@ -75,21 +70,21 @@ class _ContactContentState extends State<ContactContent>
     super.dispose();
   }
 
-  List<Map<String, dynamic>> get _filteredContacts {
-    List<Map<String, dynamic>> filtered = _contacts;
+  List<ContactItem> get _filteredContacts {
+    List<ContactItem> filtered = _contacts;
 
     // Filter by tab (0: Supplier, 1: Semua, 2: Pelanggan)
     if (_tabController.index == 0) {
-      filtered = filtered.where((t) => t['type'] == 'supplier').toList();
+      filtered = filtered.where((t) => t.type == 'SUPPLIER').toList();
     } else if (_tabController.index == 2) {
-      filtered = filtered.where((t) => t['type'] == 'pelanggan').toList();
+      filtered = filtered.where((t) => t.type == 'CUSTOMER').toList();
     }
 
     // Filter by search
     if (_searchController.text.isNotEmpty) {
       filtered = filtered
           .where(
-            (t) => t['name'].toString().toLowerCase().contains(
+            (t) => t.name.toLowerCase().contains(
               _searchController.text.toLowerCase(),
             ),
           )
@@ -183,13 +178,17 @@ class _ContactContentState extends State<ContactContent>
               const SizedBox(width: 12),
               // Add Button (replacing Filter button)
               GestureDetector(
-                onTap: () {
-                  showModalBottomSheet(
+                onTap: () async {
+                  final result = await showModalBottomSheet(
                     context: context,
                     isScrollControlled: true,
                     backgroundColor: Colors.transparent,
                     builder: (context) => const AddContactModal(),
                   );
+
+                  if (result != null) {
+                    _loadContacts();
+                  }
                 },
                 child: Container(
                   width: 48,
@@ -294,6 +293,37 @@ class _ContactContentState extends State<ContactContent>
   }
 
   Widget _buildContactList() {
+    // Show skeleton loading
+    if (_isLoading) {
+      return ListView.builder(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 100),
+        itemCount: 6, // Show 6 skeleton items
+        itemBuilder: (context, index) => _buildSkeletonItem(),
+      );
+    }
+
+    // Show error state
+    if (_hasError) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+            const SizedBox(height: 16),
+            Text(
+              'Gagal memuat kontak',
+              style: GoogleFonts.montserrat(
+                fontSize: 14,
+                color: Colors.grey.shade500,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton(onPressed: _loadContacts, child: Text('Coba lagi')),
+          ],
+        ),
+      );
+    }
+
     final contacts = _filteredContacts;
 
     if (contacts.isEmpty) {
@@ -328,17 +358,28 @@ class _ContactContentState extends State<ContactContent>
     );
   }
 
-  Widget _buildContactItem(Map<String, dynamic> contact) {
-    final isPelanggan = contact['type'] == 'pelanggan';
-    final color = isPelanggan ? AppColors.boxThird : AppColors.boxSecondBack;
+  Widget _buildContactItem(ContactItem contact) {
+    final isCustomer = contact.type == 'CUSTOMER';
+    final color = isCustomer ? AppColors.boxThird : AppColors.boxSecondBack;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
+        // Convert ContactItem to Map for ContactDetailPage compatibility
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => ContactDetailPage(contact: contact),
+            builder: (context) => ContactDetailPage(
+              contact: {
+                'id': contact.id,
+                'name': contact.name,
+                'type': isCustomer ? 'pelanggan' : 'supplier',
+                'phone': contact.phone ?? '-',
+                'address': contact.address ?? '-',
+                'notes': contact.notes ?? '',
+                'initial': contact.initial,
+              },
+            ),
           ),
         );
       },
@@ -355,7 +396,7 @@ class _ContactContentState extends State<ContactContent>
               ),
               child: Center(
                 child: Text(
-                  contact['initial'],
+                  contact.initial,
                   style: GoogleFonts.montserrat(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -370,7 +411,7 @@ class _ContactContentState extends State<ContactContent>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    contact['name'],
+                    contact.name,
                     style: GoogleFonts.montserrat(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -379,7 +420,7 @@ class _ContactContentState extends State<ContactContent>
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    contact['phone'],
+                    contact.phone ?? '-',
                     style: GoogleFonts.montserrat(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -396,7 +437,7 @@ class _ContactContentState extends State<ContactContent>
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                isPelanggan ? 'Pelanggan' : 'Supplier',
+                isCustomer ? 'Pelanggan' : 'Supplier',
                 style: GoogleFonts.montserrat(
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
@@ -406,6 +447,60 @@ class _ContactContentState extends State<ContactContent>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSkeletonItem() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          // Avatar skeleton
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.grey.shade200,
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Text skeleton
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 140,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: 100,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Badge skeleton
+          Container(
+            width: 70,
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -2,12 +2,13 @@ from contextlib import asynccontextmanager
 import databases
 import os
 import json
+import sys
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from app.schemas import ProcurementDraft, ChatInput, CommitTransactionInput, CommitTransactionResponse
+from app.schemas import ProcurementDraft, ChatInput, CommitTransactionInput, CommitTransactionResponse, TransactionListItem, TransactionDetailResponse, TransactionItemDetail, ContactItem, ContactCreateInput, ContactUpdateInput, ContactStats
 from app.services.ai_service import parse_procurement_text, parse_procurement_image
-from app.services.commit_service import commit_procurement_transaction
+from app.services.commit_service import commit_transaction_logic
 
 # Load environment variables dari file .env
 load_dotenv()
@@ -228,25 +229,305 @@ async def commit_transaction_endpoint(data: CommitTransactionInput):
     """
     print(f"[COMMIT API] Received commit request for supplier: {data.supplier_name}")
     print(f"[COMMIT API] Items count: {len(data.items)}")
+    sys.stdout.flush()
     
     # Convert Pydantic items to dict for the service
     items_dict = [item.dict() for item in data.items]
     
-    result = await commit_procurement_transaction(
-        database=database,
-        supplier_name=data.supplier_name,
-        supplier_phone=data.supplier_phone,
-        supplier_address=data.supplier_address,
-        transaction_date=data.transaction_date,
-        receipt_number=data.receipt_number,
-        items=items_dict,
-        discount=data.discount,
-        total=data.total,
-        payment_method=data.payment_method,
-        input_source=data.input_source,
-        evidence_url=data.evidence_url
-    )
+    try:
+        result = await commit_transaction_logic(database, data)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[COMMIT ERROR] {e}")
+        sys.stdout.flush()
+        return CommitTransactionResponse(
+            success=False,
+            message=f"Gagal menyimpan transaksi: {str(e)}"
+        )
     
     print(f"[COMMIT API] Result: {result}")
+    sys.stdout.flush()
     
     return CommitTransactionResponse(**result)
+
+
+# --- ENDPOINT GET TRANSACTIONS LIST ---
+@app.get("/api/v1/transactions", response_model=list[TransactionListItem])
+async def get_transactions(limit: int = 20, offset: int = 0, contact_id: str = None):
+    """
+    Get list of transactions for home page.
+    Returns transactions with contact info, ordered by date DESC.
+    Optionally filter by contact_id.
+    """
+    try:
+        base_query = """
+            SELECT 
+                t.id, t.type, t.transaction_date, t.total_amount, 
+                t.invoice_number, t.payment_method, t.created_at,
+                c.name as contact_name, c.phone as contact_phone, c.address as contact_address
+            FROM transactions t
+            LEFT JOIN contacts c ON t.contact_id = c.id
+        """
+        
+        conditions = []
+        values = {"limit": limit, "offset": offset}
+        
+        if contact_id:
+            conditions.append("t.contact_id = CAST(:contact_id AS uuid)")
+            values["contact_id"] = contact_id
+            
+        where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+        
+        query = f"{base_query}{where_clause} ORDER BY t.transaction_date DESC, t.created_at DESC LIMIT :limit OFFSET :offset"
+        
+        rows = await database.fetch_all(query=query, values=values)
+        
+        return [
+            TransactionListItem(
+                id=str(row["id"]),
+                type=row["type"] or "IN",
+                transaction_date=str(row["transaction_date"]),
+                total_amount=float(row["total_amount"] or 0),
+                invoice_number=row["invoice_number"],
+                payment_method=row["payment_method"],
+                contact_name=row["contact_name"] or "Unknown",
+                contact_phone=row["contact_phone"],
+                contact_address=row["contact_address"],
+                created_at=str(row["created_at"])
+            )
+            for row in rows
+        ]
+    except Exception as e:
+        print(f"[GET TRANSACTIONS] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
+# --- ENDPOINT GET TRANSACTION DETAIL ---
+@app.get("/api/v1/transactions/{transaction_id}", response_model=TransactionDetailResponse)
+async def get_transaction_detail(transaction_id: str):
+    """
+    Get full transaction detail including items.
+    Used for transaction detail page.
+    """
+    try:
+        # 1. Fetch transaction header with contact
+        header_query = """
+            SELECT 
+                t.id, t.type, t.transaction_date, t.total_amount, 
+                t.invoice_number, t.payment_method, t.created_at,
+                c.name as contact_name, c.phone as contact_phone, c.address as contact_address
+            FROM transactions t
+            LEFT JOIN contacts c ON t.contact_id = c.id
+            WHERE t.id = CAST(:id AS uuid)
+        """
+        header = await database.fetch_one(query=header_query, values={"id": transaction_id})
+        
+        if not header:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        
+        # 2. Fetch transaction items with product info
+        items_query = """
+            SELECT 
+                ti.id, ti.input_qty, ti.input_unit, ti.input_price, ti.subtotal, ti.notes,
+                p.name as product_name, p.variant
+            FROM transaction_items ti
+            LEFT JOIN products p ON ti.product_id = p.id
+            WHERE ti.transaction_id = CAST(:trans_id AS uuid)
+        """
+        items_rows = await database.fetch_all(query=items_query, values={"trans_id": transaction_id})
+        
+        items = [
+            TransactionItemDetail(
+                id=str(row["id"]),
+                product_name=row["product_name"] or "Unknown Product",
+                variant=row["variant"],
+                qty=float(row["input_qty"] or 0),
+                unit=row["input_unit"] or "pcs",
+                unit_price=float(row["input_price"] or 0),
+                subtotal=float(row["subtotal"] or 0),
+                notes=row["notes"]
+            )
+            for row in items_rows
+        ]
+        
+        return TransactionDetailResponse(
+            id=str(header["id"]),
+            type=header["type"] or "IN",
+            transaction_date=str(header["transaction_date"]),
+            total_amount=float(header["total_amount"] or 0),
+            invoice_number=header["invoice_number"],
+            payment_method=header["payment_method"],
+            contact_name=header["contact_name"] or "Unknown",
+            contact_phone=header["contact_phone"],
+            contact_address=header["contact_address"],
+            created_at=str(header["created_at"]),
+            items=items
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[GET TRANSACTION DETAIL] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- ENDPOINT GET CONTACTS LIST ---
+@app.get("/api/v1/contacts", response_model=list[ContactItem])
+async def get_contacts(type: str = None, limit: int = 50, offset: int = 0):
+    """
+    Get list of contacts with optional type filter.
+    type: "CUSTOMER", "SUPPLIER", or None for all
+    """
+    try:
+        if type:
+            query = """
+                SELECT id, name, type, phone, address, notes, created_at
+                FROM contacts
+                WHERE type = :type
+                ORDER BY name ASC
+                LIMIT :limit OFFSET :offset
+            """
+            rows = await database.fetch_all(query=query, values={"type": type.upper(), "limit": limit, "offset": offset})
+        else:
+            query = """
+                SELECT id, name, type, phone, address, notes, created_at
+                FROM contacts
+                ORDER BY name ASC
+                LIMIT :limit OFFSET :offset
+            """
+            rows = await database.fetch_all(query=query, values={"limit": limit, "offset": offset})
+        
+        return [
+            ContactItem(
+                id=str(row["id"]),
+                name=row["name"] or "Unknown",
+                type=row["type"] or "CUSTOMER",
+                phone=row["phone"],
+                address=row["address"],
+                notes=row["notes"],
+                created_at=str(row["created_at"]) if row["created_at"] else ""
+            )
+            for row in rows
+        ]
+    except Exception as e:
+        print(f"[GET CONTACTS] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
+# --- ENDPOINT CREATE CONTACT ---
+@app.post("/api/v1/contacts", response_model=ContactItem)
+async def create_contact(data: ContactCreateInput):
+    """
+    Create a new contact.
+    """
+    try:
+        query = """
+            INSERT INTO contacts (name, type, phone, address, notes)
+            VALUES (:name, :type, :phone, :address, :notes)
+            RETURNING id, name, type, phone, address, notes, created_at
+        """
+        values = {
+            "name": data.name,
+            "type": data.type,
+            "phone": data.phone,
+            "address": data.address,
+            "notes": data.notes
+        }
+        
+        row = await database.fetch_one(query=query, values=values)
+        
+        return ContactItem(
+            id=str(row["id"]),
+            name=row["name"],
+            type=row["type"],
+            phone=row["phone"],
+            address=row["address"],
+            notes=row["notes"],
+            created_at=str(row["created_at"])
+        )
+    except Exception as e:
+        print(f"[CREATE CONTACT] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- ENDPOINT UPDATE CONTACT ---
+@app.put("/api/v1/contacts/{contact_id}", response_model=ContactItem)
+async def update_contact(contact_id: str, data: ContactUpdateInput):
+    """
+    Update contact details.
+    """
+    try:
+        # Check if contact exists
+        check_query = "SELECT id FROM contacts WHERE id = CAST(:id AS uuid)"
+        existing = await database.fetch_one(query=check_query, values={"id": contact_id})
+        if not existing:
+             raise HTTPException(status_code=404, detail="Contact not found")
+
+        query = """
+            UPDATE contacts
+            SET name = :name,
+                phone = :phone,
+                address = :address,
+                notes = :notes
+            WHERE id = CAST(:id AS uuid)
+            RETURNING id, name, type, phone, address, notes, created_at
+        """
+        values = {
+            "id": contact_id,
+            "name": data.name,
+            "phone": data.phone,
+            "address": data.address,
+            "notes": data.notes
+        }
+        
+        row = await database.fetch_one(query=query, values=values)
+        
+        return ContactItem(
+            id=str(row["id"]),
+            name=row["name"],
+            type=row["type"],
+            phone=row["phone"],
+            address=row["address"],
+            notes=row["notes"],
+            created_at=str(row["created_at"])
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[UPDATE CONTACT] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- ENDPOINT GET CONTACT STATS ---
+@app.get("/api/v1/contacts/{contact_id}/stats", response_model=ContactStats)
+async def get_contact_stats(contact_id: str):
+    """
+    Get transaction statistics for a contact.
+    """
+    try:
+        query = """
+            SELECT 
+                COUNT(*) as count,
+                COALESCE(SUM(total_amount), 0) as total_amount
+            FROM transactions
+            WHERE contact_id = CAST(:contact_id AS uuid)
+        """
+        row = await database.fetch_one(query=query, values={"contact_id": contact_id})
+        
+        return ContactStats(
+            count=row["count"],
+            total_amount=float(row["total_amount"])
+        )
+    except Exception as e:
+        print(f"[GET CONTACT STATS] Error: {e}")
+        return ContactStats(count=0, total_amount=0)
