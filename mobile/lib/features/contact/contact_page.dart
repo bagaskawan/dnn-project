@@ -63,6 +63,11 @@ class _ContactContentState extends State<ContactContent>
     }
   }
 
+  // Public method to refresh data (called when tab becomes visible)
+  void refreshData() {
+    _loadContacts();
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -116,7 +121,14 @@ class _ContactContentState extends State<ContactContent>
                 child: Column(
                   children: [
                     _buildSearchAndAction(),
-                    Expanded(child: _buildContactList()),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: () async {
+                          await _loadContacts();
+                        },
+                        child: _buildContactList(),
+                      ),
+                    ),
                   ],
                 ),
               ),

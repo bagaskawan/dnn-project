@@ -6,6 +6,7 @@ import 'dart:io';
 import '../../core/constants/colors.dart';
 import '../../core/services/api_service.dart';
 import '../../models/procurement_draft.dart';
+import '../../shared/widgets/main_shell.dart'; // For navigation after save
 import 'dart:async'; // For debounce
 
 class BuyPage extends StatefulWidget {
@@ -285,6 +286,21 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
             followUpQuestion: newDraft.followUpQuestion,
             suggestedActions: newDraft.suggestedActions,
             confidenceScore: newDraft.confidenceScore,
+          );
+        } else if (newDraft.action == 'supplier_confirm') {
+          // KASUS 8: Supplier Confirmation -> Ask user if similar supplier is the same
+          // Preserve current state and store supplier candidate
+          _currentDraft = ProcurementDraft(
+            action: 'supplier_confirm',
+            supplierName: _currentDraft?.supplierName,
+            transactionDate:
+                _currentDraft?.transactionDate ?? newDraft.transactionDate,
+            items: _currentDraft?.items ?? [],
+            followUpQuestion: newDraft.followUpQuestion,
+            suggestedActions: newDraft.suggestedActions,
+            confidenceScore: newDraft.confidenceScore,
+            supplierCandidate:
+                newDraft.supplierCandidate, // Store for button handler
           );
         }
 
@@ -967,13 +983,17 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const CircularProgressIndicator(),
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+              ),
               const SizedBox(height: 20),
               Text(
-                "Menyimpan transaksi...",
+                "Sedang menyimpan transaksi",
+                textAlign: TextAlign.center,
                 style: GoogleFonts.montserrat(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ],
@@ -1118,24 +1138,11 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
                 ),
               ),
               onPressed: () {
-                Navigator.pop(context); // Close dialog
-                // Reset state and go back
-                setState(() {
-                  _currentDraft = null;
-                  _chatItems.clear();
-                  // Reset to initial welcome message
-                  _chatItems.add({
-                    "type": "system_note",
-                    "text": "Halo! 👋 Mau input barang apa hari ini?",
-                  });
-                  _transactionCode = null;
-                  // Also clear saved state
-                  _savedDraft = null;
-                  _savedChatItems = null;
-                  _savedTransactionCode = null;
-                });
-                // Hide draft card animation
-                _draftCardAnimationController.reverse();
+                // Navigate to home page and clear navigation stack
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const MainShell()),
+                  (route) => false, // Remove all previous routes
+                );
               },
               child: Text(
                 "Selesai",
@@ -1707,6 +1714,36 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
                 } else {
                   _showConfirmationModal();
                 }
+              } else if (action == "Ya, supplier yang sama") {
+                // User confirmed: use existing supplier
+                final candidate = _currentDraft?.supplierCandidate;
+                if (candidate != null) {
+                  _sendMessage(customText: "Ya, supplier yang sama");
+                  // Update draft with existing supplier info
+                  setState(() {
+                    _currentDraft = ProcurementDraft(
+                      action: 'update',
+                      supplierName: candidate['name'] as String?,
+                      supplierPhone: candidate['phone'] as String?,
+                      transactionDate: _currentDraft!.transactionDate,
+                      items: _currentDraft!.items,
+                      confidenceScore: _currentDraft!.confidenceScore,
+                    );
+                  });
+                }
+              } else if (action == "Beda supplier") {
+                // User rejected: create new supplier with original name
+                _sendMessage(customText: "Beda supplier");
+                // Keep current supplier name from OCR/text input
+                setState(() {
+                  _currentDraft = ProcurementDraft(
+                    action: 'update',
+                    supplierName: _currentDraft?.supplierName,
+                    transactionDate: _currentDraft!.transactionDate,
+                    items: _currentDraft!.items,
+                    confidenceScore: _currentDraft!.confidenceScore,
+                  );
+                });
               } else {
                 _sendMessage(customText: label);
               }

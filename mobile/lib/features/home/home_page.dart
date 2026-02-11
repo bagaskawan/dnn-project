@@ -36,6 +36,11 @@ class _HomeContentState extends State<HomeContent> {
     _viewModel.fetchTransactions();
   }
 
+  // Public method to refresh data (called when tab becomes visible)
+  void refreshData() {
+    _viewModel.fetchTransactions();
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -67,8 +72,16 @@ class _HomeContentState extends State<HomeContent> {
                   child: _buildActionButtons(),
                 ),
                 const SizedBox(height: 32),
-                // Portfolio/Transaction Section expanding to bottom
-                Expanded(child: _buildPortfolioSection()),
+                // Portfolio/Transaction Section expanding to bottom with pull-to-refresh
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: () async {
+                      await Future.delayed(const Duration(milliseconds: 300));
+                      refreshData();
+                    },
+                    child: _buildPortfolioSection(),
+                  ),
+                ),
               ],
             ),
           ),

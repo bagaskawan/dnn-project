@@ -35,6 +35,8 @@ class ProcurementDraft(BaseModel):
     # Merge confirmation fields
     merge_candidate: Optional[dict] = None  # Info about existing product match
     pending_items: Optional[List[dict]] = None  # Items waiting for merge confirmation
+    # Supplier confirmation field
+    supplier_candidate: Optional[dict] = None  # Info about similar supplier: {name, phone, similarity}
 
 
 # --- COMMIT TRANSACTION SCHEMAS ---
@@ -143,3 +145,47 @@ class ContactStats(BaseModel):
     """Schema for contact transaction statistics."""
     count: int
     total_amount: float
+
+
+class ProductHistoryItem(BaseModel):
+    """Schema for product history/stock ledger item."""
+    date: str
+    type: str  # IN / OUT
+    qty_change: float
+    invoice_number: Optional[str] = None
+    contact_name: Optional[str] = None
+    price_at_moment: Optional[float] = None
+
+
+class ProductListItem(BaseModel):
+    """Schema for product list item."""
+    id: str
+    name: str
+    sku: Optional[str] = None
+    stock: float
+    unit: str
+    price: float
+    initial: str
+    category: Optional[str] = None
+    variant: Optional[str] = None
+
+
+
+class ProductDetailResponse(ProductListItem):
+    """
+    Schema for full product detail.
+    Inherits from ProductListItem and adds more fields.
+    """
+    average_cost: float
+    cost_per_pcs: Optional[float] = None
+    needs_recalculation: bool = False
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class ProductUpdateInput(BaseModel):
+    """Schema for updating product."""
+    name: str
+    latest_selling_price: float
+    current_stock: float
+    average_cost: Optional[float] = None

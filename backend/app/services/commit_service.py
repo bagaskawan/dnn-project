@@ -41,9 +41,91 @@ def parse_date(date_input) -> date:
                 continue
     return datetime.now().date()
 
+async def generate_sku(database, name: str, variant: Optional[str], unit: str, category: Optional[str] = None) -> str:
+    """
+    Generate SKU with format: [KATEGORI]-[MEREK]-[SATUAN]-[NUMBER]
+    Example: FRZ-SING-BKS-001, FRZ-SING-BKS-002, etc.
+    Checks database for existing SKUs and auto-increments to find unique number.
+    """
+    # Category mapping (3 letters)
+    category_map = {
+        "frozen": "FRZ", "beku": "FRZ",
+        "snack": "SNK", "cemilan": "SNK", "kripik": "SNK",
+        "beverage": "BEV", "minuman": "BEV",
+        "fresh": "FSH", "segar": "FSH",
+        "groceries": "GRC", "sembako": "GRC"
+    }
+    
+    # Unit mapping (2-3 letters)
+    unit_map = {
+        "bungkus": "BKS", "pack": "PAK", "dus": "DUS", "box": "BOX",
+        "pcs": "PCS", "pieces": "PCS", "buah": "PCS",
+        "kg": "KG", "kilogram": "KG", "gram": "GRM", "liter": "LTR"
+    }
+    
+    # Extract KATEGORI (3 letters)
+    kategori = "GEN"  # Default
+    if category:
+        for key, code in category_map.items():
+            if key in category.lower():
+                kategori = code
+                break
+    else:
+        # Try to infer from product name
+        name_lower = name.lower()
+        for key, code in category_map.items():
+            if key in name_lower:
+                kategori = code
+                break
+    
+    # Extract MEREK (3-4 letters from product name)
+    # Remove common words and take first word
+    name_clean = re.sub(r'\b(original|pedas|manis|besar|kecil|level)\b', '', name, flags=re.IGNORECASE).strip()
+    first_word = name_clean.split()[0] if name_clean.split() else name
+    merek = first_word[:4].upper()  # Take first 3-4 characters
+    
+    # Extract SATUAN (2-3 letters)
+    satuan = unit_map.get(unit.lower(), unit[:3].upper())
+    
+    # Base SKU without number
+    base_sku = f"{kategori}-{merek}-{satuan}"
+    
+    # Query database for existing SKUs with same prefix
+    query = "SELECT sku FROM products WHERE sku LIKE :pattern ORDER BY sku DESC LIMIT 1"
+    existing = await database.fetch_one(query=query, values={"pattern": f"{base_sku}-%"})
+    
+    # Determine next number
+    if existing:
+        # Extract number from last SKU (e.g., "GEN-SING-BKS-003" -> 3)
+        last_sku = existing["sku"]
+        try:
+            last_number = int(last_sku.split("-")[-1])
+            next_number = last_number + 1
+        except (ValueError, IndexError):
+            next_number = 1
+    else:
+        next_number = 1
+    
+    # Format with 3-digit padding (001, 002, etc.)
+    final_sku = f"{base_sku}-{next_number:03d}"
+    
+    return final_sku
+
 # --- DATABASE OPERATIONS ---
 
 async def upsert_contact(database, name: str, phone: Optional[str], address: Optional[str]) -> str:
+    # Normalize phone number: ensure it starts with '0'
+    if phone:
+        phone = phone.strip().replace(" ", "").replace("-", "")
+        # Remove +62 prefix
+        if phone.startswith("+62"):
+            phone = "0" + phone[3:]
+        elif phone.startswith("62") and len(phone) > 10:
+            phone = "0" + phone[2:]
+        # If starts with 8 (missing leading 0)
+        elif phone and phone[0] == '8':
+            phone = '0' + phone
+    
     query = "SELECT id FROM contacts WHERE LOWER(name) = LOWER(:name) AND type = 'SUPPLIER'"
     row = await database.fetch_one(query=query, values={"name": name})
     if row:
@@ -65,6 +147,13 @@ async def upsert_product(database, name: str, variant: Optional[str], unit: str,
     unit_price = float(unit_price or 0)
     conversion_rate = extract_conversion_rate(variant)
     base_qty_change = qty * conversion_rate
+    # Normalisasi harga ke per-base-unit (per pcs)
+    # unit_price dari OCR = harga total untuk semua qty, bukan per-unit
+    # Contoh: 17.000 total untuk 5 bungkus → 17.000/5 = 3.400/bungkus
+    # Lalu dibagi conversion_rate untuk per-pcs
+    # Contoh: 175.000/karton isi 36pcs → 175.000/1/36 = 4.861/pcs
+    safe_qty = qty if qty > 0 else 1
+    base_unit_price = unit_price / safe_qty / conversion_rate if conversion_rate > 0 else unit_price / safe_qty
 
     # Cek Existing
     if variant:
@@ -80,7 +169,7 @@ async def upsert_product(database, name: str, variant: Optional[str], unit: str,
         product_id = str(product["id"])
         old_stock = float(product["current_stock"] or 0)
         old_avg = float(product["average_cost"] or 0)
-        new_avg = calculate_new_average_cost(old_stock, old_avg, base_qty_change, unit_price)
+        new_avg = calculate_new_average_cost(old_stock, old_avg, base_qty_change, base_unit_price)
         stock_after = old_stock + base_qty_change
         
         await database.execute(
@@ -90,20 +179,22 @@ async def upsert_product(database, name: str, variant: Optional[str], unit: str,
     else:
         product_id = str(uuid.uuid4())
         stock_after = base_qty_change
+        # Generate SKU for new product (with database check for uniqueness)
+        sku = await generate_sku(database, name, variant, unit)
         await database.execute(
             query="""
-            INSERT INTO products (id, name, variant, base_unit, current_stock, average_cost, created_at, updated_at)
-            VALUES (CAST(:id AS uuid), :name, :variant, :unit, :stock, :avg, NOW(), NOW())
+            INSERT INTO products (id, sku, name, variant, base_unit, current_stock, average_cost, created_at, updated_at)
+            VALUES (CAST(:id AS uuid), :sku, :name, :variant, :unit, :stock, :avg, NOW(), NOW())
             """,
-            values={"id": product_id, "name": name, "variant": variant, "unit": unit, "stock": stock_after, "avg": unit_price}
+            values={"id": product_id, "sku": sku, "name": name, "variant": variant, "unit": unit, "stock": stock_after, "avg": base_unit_price}
         )
 
-    # PERBAIKAN DI SINI: Gunakan key 'base_qty_change' agar konsisten
     return {
         "product_id": product_id,
         "base_qty_change": float(base_qty_change), 
         "stock_after": float(stock_after),
-        "conversion_rate": conversion_rate
+        "conversion_rate": conversion_rate,
+        "base_unit_price": round(float(base_unit_price), 2)
     }
 
 async def create_transaction_header(database, contact_id, date_str, invoice, total, payment, source, evidence):
@@ -121,15 +212,20 @@ async def create_transaction_header(database, contact_id, date_str, invoice, tot
     return trans_id, invoice
 
 async def create_transaction_item(database, trans_id, prod_id, qty, unit, price, conv_rate, subtotal, notes):
-    # Hapus base_qty dan subtotal karena Generated Column
+    # Hitung harga per-pcs untuk disimpan di cost_price_at_moment
+    # price = harga total untuk semua qty, bukan per-unit
+    safe_qty = float(qty or 1)
+    safe_conv = float(conv_rate or 1)
+    cost_per_unit = float(price or 0) / safe_qty / safe_conv if safe_qty > 0 and safe_conv > 0 else float(price or 0)
+    
     query = """
-        INSERT INTO transaction_items (id, transaction_id, product_id, input_qty, input_unit, input_price, conversion_rate, notes, created_at, updated_at)
-        VALUES (CAST(:id AS uuid), CAST(:trans_id AS uuid), CAST(:prod_id AS uuid), :qty, :unit, :price, :conv, :notes, NOW(), NOW())
+        INSERT INTO transaction_items (id, transaction_id, product_id, input_qty, input_unit, input_price, conversion_rate, cost_price_at_moment, notes, created_at, updated_at)
+        VALUES (CAST(:id AS uuid), CAST(:trans_id AS uuid), CAST(:prod_id AS uuid), :qty, :unit, :price, :conv, :cost_per_unit, :notes, NOW(), NOW())
     """
     await database.execute(query=query, values={
         "id": str(uuid.uuid4()), "trans_id": trans_id, "prod_id": prod_id,
         "qty": float(qty or 0), "unit": unit, "price": float(price or 0),
-        "conv": float(conv_rate or 1), "notes": notes
+        "conv": safe_conv, "cost_per_unit": round(cost_per_unit, 2), "notes": notes
     })
 
 async def record_stock_ledger(database, product_id, trans_id, qty_change, stock_after, notes):

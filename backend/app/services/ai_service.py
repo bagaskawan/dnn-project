@@ -10,6 +10,22 @@ from fuzzywuzzy import fuzz
 from datetime import date
 from app.config import GROQ_TEXT_MODEL, GROQ_VISION_MODEL
 
+
+def normalize_phone(phone: str) -> str:
+    """Normalize phone number to always start with '0'."""
+    if not phone:
+        return phone
+    phone = phone.strip().replace(" ", "").replace("-", "")
+    # Remove +62 prefix
+    if phone.startswith("+62"):
+        phone = "0" + phone[3:]
+    elif phone.startswith("62") and len(phone) > 10:
+        phone = "0" + phone[2:]
+    # If starts with 8 (missing leading 0)
+    elif phone and phone[0] == '8':
+        phone = "0" + phone
+    return phone
+
 # EasyOCR for accurate text extraction (simpler than PaddleOCR, no conflicts)
 import easyocr
 
@@ -617,9 +633,51 @@ def check_draft_duplication(response: dict, current_draft: dict):
     # Default: Loloskan semua (harusnya tidak sampai sini jika logika benar)
     return response
 
+def check_supplier_duplication(ai_response: dict, known_suppliers: list) -> dict:
+    """
+    Check if extracted supplier name is similar to existing suppliers.
+    If similarity > 70%, return supplier_confirm action.
+    """
+    from fuzzywuzzy import fuzz
+    
+    supplier_name = ai_response.get('supplier_name')
+    if not supplier_name or not known_suppliers:
+        return ai_response
+    
+    # Check for fuzzy matches
+    best_match = None
+    best_score = 0
+    
+    for supplier in known_suppliers:
+        existing_name = supplier.get('name', '')
+        score = fuzz.ratio(supplier_name.lower(), existing_name.lower())
+        
+        if score > best_score:
+            best_score = score
+            best_match = supplier
+    
+    # If match > 70%, ask for confirmation
+    if best_score > 70 and best_score < 100:  # Not exact match
+        return {
+            "action": "supplier_confirm",
+            "supplier_name": supplier_name,  # New supplier name from input
+            "supplier_candidate": {
+                "name": best_match['name'],
+                "phone": best_match.get('phone'),
+                "similarity": best_score
+            },
+            "items": ai_response.get('items', []),
+            "transaction_date": ai_response.get('transaction_date'),
+            "follow_up_question": f"🤔 Apakah supplier '{supplier_name}' ini sama dengan '{best_match['name']}' yang sudah ada?",
+            "suggested_actions": ["Ya, supplier yang sama", "Beda supplier"],
+            "confidence_score": ai_response.get('confidence_score', 0.9)
+        }
+    
+    return ai_response
+
 # --- MAIN EXPORT FUNCTION ---
 
-async def parse_procurement_text(text_input: str, current_draft: dict = None, known_products: list = None):
+async def parse_procurement_text(text_input: str, current_draft: dict = None, known_products: list = None, known_suppliers: list = None):
     try:
         pre = resolve_ambiguity_preprocessing(text_input, current_draft)
         if pre: return pre 
@@ -650,12 +708,17 @@ async def parse_procurement_text(text_input: str, current_draft: dict = None, kn
         
         ai_response = json.loads(completion.choices[0].message.content)
         
+        # Normalize phone number
+        if ai_response.get('supplier_phone'):
+            ai_response['supplier_phone'] = normalize_phone(ai_response['supplier_phone'])
+        
         for item in ai_response.get('items', []):
             normalize_item_data(item, product_context=known_products)
             
         final = validate_extracted_items(ai_response)
         final = check_draft_duplication(final, current_draft) # LOGIKA BARU
         final = add_supplier_reminder(final, current_draft)
+        final = check_supplier_duplication(final, known_suppliers) # SUPPLIER DEDUP
         
         return final
 
@@ -813,6 +876,10 @@ Struk: "Singkong jadul balado 1kg | 2 | Rp 20.000 | Rp 40.000"
         
         ai_response = json.loads(completion.choices[0].message.content)
         print(f"[RECEIPT_OCR] Step 2 - Parsed Result: {ai_response}")
+        
+        # Normalize phone number
+        if ai_response.get('supplier_phone'):
+            ai_response['supplier_phone'] = normalize_phone(ai_response['supplier_phone'])
         
         # ============================================
         # STEP 3: Post-process with Fuzzy Matching (fallback)

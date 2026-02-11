@@ -256,6 +256,95 @@ class ApiService {
       return null;
     }
   }
+
+  // 11. Get Product History
+  Future<List<ProductHistoryItem>> getProductHistory(String productId) async {
+    try {
+      final response = await _dio.get('/api/v1/products/$productId/history');
+
+      if (response.statusCode == 200) {
+        return (response.data as List)
+            .map((e) => ProductHistoryItem.fromJson(e))
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      print("Error Get Product History API: $e");
+      return [];
+    }
+  }
+
+  // 12. Get Products List
+  Future<List<ProductListItem>> getProducts({String? status}) async {
+    try {
+      final queryParams = <String, dynamic>{};
+      if (status != null) {
+        queryParams['status'] = status;
+      }
+
+      final response = await _dio.get(
+        '/api/v1/products',
+        queryParameters: queryParams,
+      );
+
+      if (response.statusCode == 200) {
+        return (response.data as List)
+            .map((e) => ProductListItem.fromJson(e))
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      print("Error Get Products API: $e");
+      return [];
+    }
+  }
+
+  // 13. Get Product Detail
+  Future<Map<String, dynamic>?> getProductDetail(String id) async {
+    try {
+      final response = await _dio.get('/api/v1/products/$id');
+
+      if (response.statusCode == 200) {
+        return response.data as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      print("Error Get Product Detail API: $e");
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> updateProduct(
+    String id,
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      final response = await _dio.put('/api/v1/products/$id', data: data);
+
+      if (response.statusCode == 200) {
+        return response.data as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      print("Error Update Product API: $e");
+      return null;
+    }
+  }
+
+  // 15. Recalculate Product Average Cost
+  Future<Map<String, dynamic>?> recalculateProduct(String id) async {
+    try {
+      final response = await _dio.post('/api/v1/products/$id/recalculate');
+
+      if (response.statusCode == 200) {
+        return response.data as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      print("Error Recalculate Product API: $e");
+      return null;
+    }
+  }
 }
 
 /// Response model for commit transaction
@@ -285,6 +374,95 @@ class CommitTransactionResponse {
       newProductsCreated: json['new_products_created'],
       message: json['message'] ?? '',
     );
+  }
+}
+
+/// Product History / Stock Ledger Item
+class ProductHistoryItem {
+  final String date;
+  final String type; // IN / OUT
+  final double qtyChange;
+  final String? invoiceNumber;
+  final String? contactName;
+  final double? priceAtMoment;
+
+  ProductHistoryItem({
+    required this.date,
+    required this.type,
+    required this.qtyChange,
+    this.invoiceNumber,
+    this.contactName,
+    this.priceAtMoment,
+  });
+
+  factory ProductHistoryItem.fromJson(Map<String, dynamic> json) {
+    return ProductHistoryItem(
+      date: json['date'] ?? '',
+      type: json['type'] ?? 'IN',
+      qtyChange: (json['qty_change'] ?? 0).toDouble(),
+      invoiceNumber: json['invoice_number'],
+      contactName: json['contact_name'],
+      priceAtMoment: json['price_at_moment'] != null
+          ? (json['price_at_moment'] as num).toDouble()
+          : null,
+    );
+  }
+}
+
+/// Product List Item
+class ProductListItem {
+  final String id;
+  final String name;
+  final String? sku;
+  final double stock;
+  final String unit;
+  final double price;
+  final String initial;
+  final String? category;
+  final String? variant;
+
+  ProductListItem({
+    required this.id,
+    required this.name,
+    this.sku,
+    required this.stock,
+    required this.unit,
+    required this.price,
+    required this.initial,
+    this.category,
+    this.variant,
+  });
+
+  factory ProductListItem.fromJson(Map<String, dynamic> json) {
+    return ProductListItem(
+      id: json['id'] ?? '',
+      name: json['name'] ?? 'Unknown',
+      sku: json['sku'],
+      stock: (json['stock'] ?? 0).toDouble(),
+      unit: json['unit'] ?? 'pcs',
+      price: (json['price'] ?? 0).toDouble(),
+      initial: json['initial'] ?? 'P',
+      category: json['category'],
+      variant: json['variant'],
+    );
+  }
+
+  // Helper helper to convert to Map for compatibility with existing UI that uses Map
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'sku': sku,
+      'stock': stock, // UI expects dynamic type, double is fine
+      'current_stock': stock, // Alias for Detailed Page
+      'unit': unit,
+      'base_unit': unit, // Alias for Detailed Page
+      'price': price,
+      'latest_selling_price': price, // Alias for Detailed Page
+      'initial': initial,
+      'category': category,
+      'variant': variant,
+    };
   }
 }
 

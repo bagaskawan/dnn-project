@@ -113,6 +113,8 @@ class ProcurementDraft {
   final List<Map<String, dynamic>>? pendingItems;
   final List<Map<String, dynamic>>?
   pendingItemsToReprocess; // Items to re-send after confirmation
+  // Supplier confirmation field
+  final Map<String, dynamic>? supplierCandidate; // {name, phone, similarity}
 
   ProcurementDraft({
     required this.action,
@@ -132,6 +134,7 @@ class ProcurementDraft {
     this.mergeCandidate,
     this.pendingItems,
     this.pendingItemsToReprocess,
+    this.supplierCandidate,
   });
 
   factory ProcurementDraft.fromJson(Map<String, dynamic> json) {
@@ -166,6 +169,12 @@ class ProcurementDraft {
       );
     }
 
+    // Parse supplier candidate
+    Map<String, dynamic>? supplierCandidate;
+    if (json['supplier_candidate'] != null) {
+      supplierCandidate = Map<String, dynamic>.from(json['supplier_candidate']);
+    }
+
     return ProcurementDraft(
       action: json['action'] ?? 'chat',
       supplierName: json['supplier_name'],
@@ -184,6 +193,7 @@ class ProcurementDraft {
       mergeCandidate: mergeCandidate,
       pendingItems: pendingItems,
       pendingItemsToReprocess: pendingItemsToReprocess,
+      supplierCandidate: supplierCandidate,
     );
   }
 
@@ -207,6 +217,7 @@ class ProcurementDraft {
       'merge_candidate': mergeCandidate?.toJson(),
       'pending_items': pendingItems,
       'pending_items_to_reprocess': pendingItemsToReprocess,
+      'supplier_candidate': supplierCandidate,
     };
   }
 
@@ -229,6 +240,7 @@ class ProcurementDraft {
       mergeCandidate: newDraft.mergeCandidate,
       pendingItems: newDraft.pendingItems,
       pendingItemsToReprocess: newDraft.pendingItemsToReprocess,
+      supplierCandidate: newDraft.supplierCandidate,
     );
   }
 
@@ -251,6 +263,7 @@ class ProcurementDraft {
       mergeCandidate: newDraft.mergeCandidate,
       pendingItems: newDraft.pendingItems,
       pendingItemsToReprocess: newDraft.pendingItemsToReprocess,
+      supplierCandidate: newDraft.supplierCandidate,
     );
   }
 }

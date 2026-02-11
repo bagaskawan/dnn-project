@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/colors.dart';
+import '../../core/services/api_service.dart';
 import 'detail-product/product_detail_page.dart';
 import 'add-product/add_product_modal.dart';
 
@@ -26,100 +27,72 @@ class _ProductContentState extends State<ProductContent>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
+  final ApiService _apiService = ApiService();
 
-  // Sample product data
-  final List<Map<String, dynamic>> _products = [
-    {
-      'name': 'Beras Premium 5kg',
-      'sku': 'BRS-001',
-      'price': 75000,
-      'stock': 50,
-      'unit': 'pcs',
-      'initial': 'BP',
-    },
-    {
-      'name': 'Gula Pasir 1kg',
-      'sku': 'GLA-002',
-      'price': 15000,
-      'stock': 3,
-      'unit': 'pcs',
-      'initial': 'GP',
-    },
-    {
-      'name': 'Minyak Goreng 2L',
-      'sku': 'MYK-003',
-      'price': 32000,
-      'stock': 0,
-      'unit': 'botol',
-      'initial': 'MG',
-    },
-    {
-      'name': 'Kopi Sachet',
-      'sku': 'KPI-004',
-      'price': 2500,
-      'stock': 120,
-      'unit': 'pcs',
-      'initial': 'KS',
-    },
-    {
-      'name': 'Teh Celup',
-      'sku': 'TEH-005',
-      'price': 5000,
-      'stock': 5,
-      'unit': 'box',
-      'initial': 'TC',
-    },
-    {
-      'name': 'Sabun Mandi',
-      'sku': 'SBN-006',
-      'price': 8000,
-      'stock': 25,
-      'unit': 'pcs',
-      'initial': 'SM',
-    },
-  ];
+  List<ProductListItem> _allProducts = [];
+  List<ProductListItem> _filteredProducts = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this, initialIndex: 1);
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) {
-        setState(() {});
-      }
-    });
+    _tabController.addListener(_handleTabSelection);
+    _fetchProducts(); // Initial fetch (Semua)
+  }
+
+  void _handleTabSelection() {
+    if (!_tabController.indexIsChanging) {
+      _fetchProducts();
+    }
+  }
+
+  Future<void> _fetchProducts() async {
+    setState(() => _isLoading = true);
+
+    String? status;
+    if (_tabController.index == 0) {
+      status = 'low_stock';
+    } else if (_tabController.index == 2) {
+      status = 'out_of_stock';
+    }
+    // index 1 is 'all', so status is null
+
+    final products = await _apiService.getProducts(status: status);
+
+    if (mounted) {
+      setState(() {
+        _allProducts = products;
+        _filterProducts(); // Apply search filter if any
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _filterProducts() {
+    final query = _searchController.text.toLowerCase();
+    if (query.isEmpty) {
+      _filteredProducts = List.from(_allProducts);
+    } else {
+      _filteredProducts = _allProducts.where((p) {
+        final name = p.name.toLowerCase();
+        final sku = (p.sku ?? '').toLowerCase();
+        return name.contains(query) || sku.contains(query);
+      }).toList();
+    }
+  }
+
+  // Public method to refresh data (called when tab becomes visible)
+  void refreshData() {
+    _fetchProducts();
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_handleTabSelection);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
-  }
-
-  List<Map<String, dynamic>> get _filteredProducts {
-    List<Map<String, dynamic>> filtered = _products;
-
-    // Filter by tab (0: Menipis, 1: Semua, 2: Habis)
-    if (_tabController.index == 0) {
-      filtered = filtered
-          .where((p) => p['stock'] > 0 && p['stock'] <= 5)
-          .toList();
-    } else if (_tabController.index == 2) {
-      filtered = filtered.where((p) => p['stock'] == 0).toList();
-    }
-
-    // Filter by search
-    final query = _searchController.text.toLowerCase();
-    if (query.isNotEmpty) {
-      filtered = filtered.where((p) {
-        final name = p['name'].toString().toLowerCase();
-        final sku = p['sku'].toString().toLowerCase();
-        return name.contains(query) || sku.contains(query);
-      }).toList();
-    }
-
-    return filtered;
   }
 
   @override
@@ -144,7 +117,14 @@ class _ProductContentState extends State<ProductContent>
                 child: Column(
                   children: [
                     _buildSearchAndAction(),
-                    Expanded(child: _buildProductList()),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: () async {
+                          await _fetchProducts();
+                        },
+                        child: _buildProductList(),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -189,7 +169,7 @@ class _ProductContentState extends State<ProductContent>
                   ),
                   child: TextField(
                     controller: _searchController,
-                    onChanged: (_) => setState(() {}),
+                    onChanged: (_) => setState(() => _filterProducts()),
                     decoration: InputDecoration(
                       hintText: 'Cari nama atau SKU ...',
                       hintStyle: GoogleFonts.montserrat(
@@ -214,10 +194,9 @@ class _ProductContentState extends State<ProductContent>
                     builder: (context) => const AddProductModal(),
                   );
 
-                  if (result != null && result is Map<String, dynamic>) {
-                    setState(() {
-                      _products.insert(0, result);
-                    });
+                  if (result == true) {
+                    // Refetch if product added
+                    _fetchProducts();
                   }
                 },
                 child: Container(
@@ -234,50 +213,6 @@ class _ProductContentState extends State<ProductContent>
           ),
         ),
         const SizedBox(height: 16),
-        // Filter Tabs (Menipis, Semua, Habis)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final tabWidth = constraints.maxWidth / 3;
-                return Stack(
-                  children: [
-                    // Sliding indicator
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.easeInOut,
-                      left: _tabController.index * tabWidth,
-                      top: 0,
-                      bottom: 0,
-                      child: Container(
-                        width: tabWidth,
-                        decoration: BoxDecoration(
-                          color: _getTabColor(_tabController.index),
-                          borderRadius: BorderRadius.circular(26),
-                        ),
-                      ),
-                    ),
-                    // Tab labels
-                    Row(
-                      children: [
-                        _buildTabLabel(0, 'Menipis'),
-                        _buildTabLabel(1, 'Semua'),
-                        _buildTabLabel(2, 'Habis'),
-                      ],
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
       ],
     );
   }
@@ -323,9 +258,15 @@ class _ProductContentState extends State<ProductContent>
   }
 
   Widget _buildProductList() {
-    final products = _filteredProducts;
+    if (_isLoading) {
+      return ListView.builder(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 100),
+        itemCount: 6,
+        itemBuilder: (context, index) => _buildProductSkeletonItem(),
+      );
+    }
 
-    if (products.isEmpty) {
+    if (_filteredProducts.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -350,17 +291,71 @@ class _ProductContentState extends State<ProductContent>
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 100),
-      itemCount: products.length,
+      itemCount: _filteredProducts.length,
       itemBuilder: (context, index) {
-        return _buildProductItem(products[index]);
+        return _buildProductItem(_filteredProducts[index]);
       },
     );
   }
 
-  Widget _buildProductItem(Map<String, dynamic> product) {
-    final stock = product['stock'] as int;
+  Widget _buildProductSkeletonItem() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          // Icon skeleton
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.grey.shade200,
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Text skeleton
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 140,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: 80,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Badge skeleton
+          Container(
+            width: 60,
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductItem(ProductListItem product) {
+    final stock = product.stock;
     final isLowStock = stock > 0 && stock <= 5;
-    final isOutOfStock = stock == 0;
+    final isOutOfStock = stock <= 0;
 
     Color stockColor = AppColors.textPrimary;
     Color bgColor = AppColors.primary;
@@ -378,7 +373,7 @@ class _ProductContentState extends State<ProductContent>
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => ProductDetailPage(product: product),
+            builder: (context) => ProductDetailPage(product: product.toJson()),
           ),
         );
       },
@@ -396,7 +391,7 @@ class _ProductContentState extends State<ProductContent>
               ),
               child: Center(
                 child: Text(
-                  product['initial'],
+                  product.initial,
                   style: GoogleFonts.montserrat(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -412,7 +407,7 @@ class _ProductContentState extends State<ProductContent>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    product['name'],
+                    product.name,
                     style: GoogleFonts.montserrat(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -421,7 +416,7 @@ class _ProductContentState extends State<ProductContent>
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'SKU: ${product['sku']}',
+                    'SKU: ${product.sku ?? '-'}',
                     style: GoogleFonts.montserrat(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -439,7 +434,7 @@ class _ProductContentState extends State<ProductContent>
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                '${product['stock']} ${product['unit']}',
+                '${product.stock.toInt()} ${product.unit}',
                 style: GoogleFonts.montserrat(
                   fontSize: 10,
                   fontWeight: FontWeight.w600,

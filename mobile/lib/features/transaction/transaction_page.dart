@@ -78,6 +78,11 @@ class _TransactionContentState extends State<TransactionContent>
     }
   }
 
+  // Public method to refresh data (called when tab becomes visible)
+  void refreshData() {
+    _fetchTransactions();
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -135,7 +140,14 @@ class _TransactionContentState extends State<TransactionContent>
                 child: Column(
                   children: [
                     _buildSearchAndFilter(),
-                    Expanded(child: _buildTransactionList()),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: () async {
+                          await _fetchTransactions();
+                        },
+                        child: _buildTransactionList(),
+                      ),
+                    ),
                   ],
                 ),
               ),
