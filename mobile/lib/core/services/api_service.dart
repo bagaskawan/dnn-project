@@ -331,6 +331,27 @@ class ApiService {
     }
   }
 
+  // 14. Add Product Stock
+  Future<Map<String, dynamic>?> addProductStock(
+    String id,
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      final response = await _dio.post(
+        '/api/v1/products/$id/stock',
+        data: data,
+      );
+
+      if (response.statusCode == 200) {
+        return response.data as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      print("Error Add Product Stock API: $e");
+      return null;
+    }
+  }
+
   // 15. Recalculate Product Average Cost
   Future<Map<String, dynamic>?> recalculateProduct(String id) async {
     try {
@@ -632,5 +653,17 @@ class ContactItem {
       return words[0].substring(0, words[0].length >= 2 ? 2 : 1).toUpperCase();
     }
     return 'NA';
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'type': type,
+      'phone': phone,
+      'address': address,
+      'notes': notes,
+      'created_at': createdAt,
+    };
   }
 }

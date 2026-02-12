@@ -189,3 +189,11 @@ class ProductUpdateInput(BaseModel):
     latest_selling_price: float
     current_stock: float
     average_cost: Optional[float] = None
+
+
+class ProductStockAddInput(BaseModel):
+    """Schema for adding stock to a product."""
+    qty: float
+    supplier_name: str
+    supplier_phone: Optional[str] = None
+    total_buy_price: float  # Total buy price is now required

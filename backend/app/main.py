@@ -6,7 +6,7 @@ import sys
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from app.schemas import ProcurementDraft, ChatInput, CommitTransactionInput, CommitTransactionResponse, TransactionListItem, TransactionDetailResponse, TransactionItemDetail, ContactItem, ContactCreateInput, ContactUpdateInput, ContactStats, ProductHistoryItem, ProductListItem, ProductDetailResponse, ProductUpdateInput
+from app.schemas import ProcurementDraft, ChatInput, CommitTransactionInput, CommitTransactionResponse, TransactionListItem, TransactionDetailResponse, TransactionItemDetail, ContactItem, ContactCreateInput, ContactUpdateInput, ContactStats, ProductHistoryItem, ProductListItem, ProductDetailResponse, ProductUpdateInput, ProductStockAddInput
 from typing import List
 from app.services.ai_service import parse_procurement_text, parse_procurement_image
 from app.services.commit_service import commit_transaction_logic
@@ -752,6 +752,139 @@ async def update_product(product_id: str, data: ProductUpdateInput):
         raise
     except Exception as e:
         print(f"[UPDATE PRODUCT] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- ENDPOINT ADD STOCK ---
+@app.post("/api/v1/products/{product_id}/stock")
+async def add_product_stock(product_id: str, data: ProductStockAddInput):
+    """
+    Add stock to a product with supplier details.
+    Creates an 'IN' transaction and updates stock/average_cost.
+    """
+    try:
+        # Check product exists
+        check_query = "SELECT id, name, current_stock, average_cost, base_unit FROM products WHERE id = CAST(:id AS uuid)"
+        product = await database.fetch_one(query=check_query, values={"id": product_id})
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+
+        async with database.transaction():
+            # 1. Find or Create Supplier Contact
+            supplier_id = None
+            if data.supplier_name:
+                # Check existing
+                find_supplier = "SELECT id FROM contacts WHERE LOWER(name) = :name AND type = 'SUPPLIER'"
+                supplier = await database.fetch_one(query=find_supplier, values={"name": data.supplier_name.lower().strip()})
+                
+                if supplier:
+                    supplier_id = str(supplier["id"])
+                    # Optional: Update phone if provided and not set? 
+                    # For simplicity, we just use existing ID.
+                else:
+                    # Create new supplier
+                    new_supplier_id = str(uuid.uuid4())
+                    insert_supplier = """
+                        INSERT INTO contacts (id, name, type, phone, created_at, updated_at)
+                        VALUES (CAST(:id AS uuid), :name, 'SUPPLIER', :phone, NOW(), NOW())
+                        RETURNING id
+                    """
+                    await database.execute(query=insert_supplier, values={
+                        "id": new_supplier_id,
+                        "name": data.supplier_name.strip(),
+                        "phone": data.supplier_phone
+                    })
+                    supplier_id = new_supplier_id
+
+            # 2. Create Transaction (IN)
+            transaction_id = str(uuid.uuid4())
+            invoice_number = generate_invoice_number()
+            
+            # Calculate total amount
+            # total_buy_price is mandatory now
+            total_amount = data.total_buy_price
+            unit_price = total_amount / data.qty if data.qty > 0 else 0
+            
+            insert_transaction = """
+                INSERT INTO transactions (id, type, transaction_date, total_amount, invoice_number, contact_id, created_at, updated_at)
+                VALUES (CAST(:id AS uuid), 'IN', NOW(), :total, :inv, CAST(:cid AS uuid), NOW(), NOW())
+            """
+            await database.execute(query=insert_transaction, values={
+                "id": transaction_id,
+                "total": total_amount,
+                "inv": invoice_number,
+                "cid": supplier_id
+            })
+
+            # 3. Create Transaction Item
+            item_id = str(uuid.uuid4())
+            # For direct stock add, conversion rate is 1 (base unit)
+            # input_price in transaction_items is UNIT PRICE because subtotal is generated (qty * price)
+            insert_item = """
+                INSERT INTO transaction_items (id, transaction_id, product_id, input_qty, input_unit, conversion_rate, input_price, cost_price_at_moment, subtotal)
+                VALUES (CAST(:id AS uuid), CAST(:tid AS uuid), CAST(:pid AS uuid), :qty, :unit, 1.0, :unit_price, :cost_at_moment, :subtotal)
+            """
+            await database.execute(query=insert_item, values={
+                "id": item_id,
+                "tid": transaction_id,
+                "pid": product_id,
+                "qty": data.qty,
+                "unit": product["base_unit"],
+                "unit_price": unit_price,
+                "cost_at_moment": unit_price,
+                "subtotal": total_amount
+            })
+
+            # 4. Update Product Stock & Average Cost
+            new_stock = float(product["current_stock"] or 0) + data.qty
+            
+            # Calculate new average cost
+            old_stock = float(product["current_stock"] or 0)
+            old_avg = float(product["average_cost"] or 0)
+            
+            new_avg = old_avg # Default
+            if new_stock > 0:
+                total_old_val = old_stock * old_avg
+                total_new_val = total_amount # (qty * unit_price)
+                # If old stock < 0, handle gracefully? 
+                # If old_stock < 0, we treat it as 0 value for avg cost calc? 
+                # Basic weighted average:
+                effective_old_stock = max(0, old_stock)
+                new_avg = ( (effective_old_stock * old_avg) + total_new_val ) / (effective_old_stock + data.qty)
+            
+            update_product_query = """
+                UPDATE products
+                SET current_stock = :stock,
+                    average_cost = :avg,
+                    updated_at = NOW()
+                WHERE id = CAST(:id AS uuid)
+            """
+            await database.execute(query=update_product_query, values={
+                "stock": new_stock,
+                "avg": round(new_avg, 2),
+                "id": product_id
+            })
+
+            # 5. Insert into Stock Ledger
+            insert_ledger = """
+                INSERT INTO stock_ledger (product_id, transaction_id, date, type, qty_change, stock_after, notes)
+                VALUES (CAST(:pid AS uuid), CAST(:tid AS uuid), NOW(), 'IN', :qty, :stock_after, 'Restock via App')
+            """
+            await database.execute(query=insert_ledger, values={
+                "pid": product_id,
+                "tid": transaction_id,
+                "qty": data.qty,
+                "stock_after": new_stock
+            })
+
+        return {"success": True, "message": "Stok berhasil ditambahkan", "new_stock": new_stock, "new_avg_cost": round(new_avg, 2)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ADD STOCK] Error: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/colors.dart';
 import '../../../core/services/api_service.dart';
 import 'widgets/edit_product_modal.dart';
+import 'widgets/add_stock_modal.dart' hide ThousandSeparatorInputFormatter;
 
 class ProductDetailPage extends StatefulWidget {
   final Map<String, dynamic> product;
@@ -148,8 +149,8 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 ),
                 actions: [
                   IconButton(
-                    icon: const Icon(Icons.edit_outlined, color: Colors.black),
-                    onPressed: () => _showEditProductModal(context),
+                    icon: const Icon(Icons.more_vert, color: Colors.black),
+                    onPressed: () => _showActionSheet(context),
                   ),
                 ],
                 bottom: PreferredSize(
@@ -812,6 +813,84 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         },
       ),
     );
+  }
+
+  void _showActionSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(
+                'Edit Produk',
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              subtitle: Text(
+                'Ubah nama, harga, dan stok',
+                style: GoogleFonts.montserrat(fontSize: 12, color: Colors.grey),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _showEditProductModal(context);
+              },
+            ),
+            ListTile(
+              title: Text(
+                'Tambah Stok',
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              subtitle: Text(
+                'Catat penambahan stok baru',
+                style: GoogleFonts.montserrat(fontSize: 12, color: Colors.grey),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _showAddStockModal(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddStockModal(BuildContext context) async {
+    final result = await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => AddStockModal(product: _product),
+    );
+
+    if (result == true) {
+      // Refresh data
+      await Future.wait([_fetchProductDetail(), _fetchHistory()]);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Stok berhasil ditambahkan',
+              style: GoogleFonts.montserrat(fontSize: 13),
+            ),
+            backgroundColor: AppColors.boxSecondBack,
+          ),
+        );
+      }
+    }
   }
 
   void _showEditProductModal(BuildContext context) async {
