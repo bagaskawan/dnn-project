@@ -1,7 +1,11 @@
 fastapi
 uvicorn[standard]
 python-dotenv
-google-generativeai
 python-multipart
 pydantic
 groq
+databases[postgresql]
+asyncpg
+easyocr
+fuzzywuzzy
+python-Levenshtein
