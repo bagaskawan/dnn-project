@@ -291,3 +291,95 @@ async def commit_transaction_logic(database, data):
             "items_processed": items_processed,
             "message": "Transaksi berhasil disimpan!"
         }
+
+async def commit_sale_logic(database, data):
+    async with database.transaction():
+        # 1. Customer (Upsert if name provided, else use default ID or create 'Pelanggan Umum')
+        customer_name = data.customer_name or "Pelanggan Umum"
+        query_cust = "SELECT id FROM contacts WHERE LOWER(name) = LOWER(:name) AND type = 'CUSTOMER'"
+        cust_row = await database.fetch_one(query=query_cust, values={"name": customer_name})
+        
+        if cust_row:
+            contact_id = str(cust_row["id"])
+        else:
+            contact_id = str(uuid.uuid4())
+            await database.execute(
+                query="INSERT INTO contacts (id, name, type, created_at) VALUES (CAST(:id AS uuid), :name, 'CUSTOMER', NOW())",
+                values={"id": contact_id, "name": customer_name}
+            )
+
+        # 2. Transaction Header (OUT)
+        trans_id = str(uuid.uuid4())
+        invoice_num = generate_invoice_number()
+        
+        # Parse date logic similar to commit_transaction
+        trx_date = datetime.now().date() 
+        if data.transaction_date != "NOW":
+             trx_date = parse_date(data.transaction_date)
+
+        await database.execute(
+            query="""
+                INSERT INTO transactions (id, type, contact_id, transaction_date, invoice_number, total_amount, payment_method, created_at, updated_at)
+                VALUES (CAST(:id AS uuid), 'OUT', CAST(:cid AS uuid), :date, :inv, :total, :pm, NOW(), NOW())
+            """,
+            values={
+                "id": trans_id, "cid": contact_id, "date": trx_date, 
+                "inv": invoice_num, "total": data.total, "pm": data.payment_method
+            }
+        )
+
+        # 3. Items & Stock Update
+        for item in data.items:
+            qty = float(item.qty)
+            if qty <= 0: continue
+            
+            # Find Product
+            # We assume product MUST exist for Sale (frontend should validate or AI should match)
+            # If not found by exact name/variant, we might skip or error. 
+            # For robustness, we try fuzzy or just name.
+            
+            # Simple match by name and variant
+            p_query = "SELECT id, current_stock, base_unit FROM products WHERE LOWER(name) = LOWER(:name)"
+            p_vals = {"name": item.product_name}
+            if item.variant:
+                p_query += " AND LOWER(variant) = LOWER(:var)"
+                p_vals["var"] = item.variant
+            
+            product = await database.fetch_one(query=p_query, values=p_vals)
+            
+            if product:
+                pid = str(product["id"])
+                
+                # Insert Transaction Item
+                await database.execute(
+                    query="""
+                        INSERT INTO transaction_items (id, transaction_id, product_id, input_qty, input_unit, input_price, subtotal, created_at)
+                        VALUES (CAST(:id AS uuid), CAST(:tid AS uuid), CAST(:pid AS uuid), :qty, :unit, :price, :sub, NOW())
+                    """,
+                    values={
+                        "id": str(uuid.uuid4()), "tid": trans_id, "pid": pid,
+                        "qty": qty, "unit": item.unit, 
+                        "price": float(item.unit_price or 0), # Selling price
+                        "sub": float(item.total_price)
+                    }
+                )
+                
+                # Update Stock (Reduce)
+                new_stock = float(product["current_stock"] or 0) - qty
+                await database.execute(
+                    query="UPDATE products SET current_stock = :stock, updated_at = NOW() WHERE id = CAST(:id AS uuid)",
+                    values={"stock": new_stock, "id": pid}
+                )
+                
+                # Ledger (OUT)
+                await database.execute(
+                     query="INSERT INTO stock_ledger (product_id, transaction_id, date, type, qty_change, stock_after, notes) VALUES (CAST(:pid AS uuid), CAST(:tid AS uuid), NOW(), 'OUT', :qty, :stock, 'Penjualan')",
+                     values={"pid": pid, "tid": trans_id, "qty": -qty, "stock": new_stock}
+                )
+
+        return {
+            "success": True, 
+            "message": "Penjualan berhasil disimpan",
+            "transaction_id": trans_id,
+            "invoice_number": invoice_num
+        }

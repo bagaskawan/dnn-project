@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/colors.dart';
+import '../../../core/services/api_service.dart';
 
 class SaleFormPage extends StatefulWidget {
   const SaleFormPage({super.key});
@@ -11,37 +12,60 @@ class SaleFormPage extends StatefulWidget {
 
 class _SaleFormPageState extends State<SaleFormPage> {
   String? _selectedCustomer;
-  final List<Map<String, dynamic>> _items = [
-    {
-      'name': 'Keripik Singkong',
-      'stock': 45,
-      'unit': 'Bal',
-      'quantity': 1,
-      'price': 50000,
-    },
-  ];
+  final List<Map<String, dynamic>> _items = [];
+  final ApiService _apiService = ApiService();
 
-  // Sample customer data
+  // Sample customer data (Replace with API if needed later)
   final List<String> _customers = [
     'Toko Makmur',
     'Warung Berkah',
     'Kedai Sejahtera',
     'Kios Sentosa',
-    'Toko Bahagia',
-    'Toko Jaya',
-    'Warung Sukses',
-    'Kedai Makmur',
-    'Kios Berkah',
-    'Toko Sentosa',
-    'Warung Bahagia',
-    'Kedai Rejeki',
-    'Toko Sejahtera',
-    'Kios Amanah',
-    'Warung Lancar',
+    'Pelanggan Umum',
   ];
 
   double get _total =>
       _items.fold(0, (sum, item) => sum + (item['price'] * item['quantity']));
+
+  Future<void> _showProductSearch() async {
+    final result = await showSearch(
+      context: context,
+      delegate: ProductSearchDelegate(apiService: _apiService),
+    );
+
+    if (result != null) {
+      setState(() {
+        // Check if item already exists
+        final existingIndex = _items.indexWhere(
+          (item) => item['id'] == result['id'],
+        );
+
+        if (existingIndex >= 0) {
+          _items[existingIndex]['quantity']++;
+        } else {
+          _items.add({
+            'id': result['id'],
+            'name': result['display_name'] ?? result['name'] ?? 'Produk',
+            'stock':
+                result['stock'] ??
+                0, // Need to implement get product detail to get real stock if search doesn't return it
+            'unit': result['unit'] ?? 'pcs',
+            'quantity': 1,
+            'price': _parsePrice(
+              result['latest_selling_price'] ?? result['price'],
+            ),
+          });
+        }
+      });
+    }
+  }
+
+  double _parsePrice(dynamic price) {
+    if (price is int) return price.toDouble();
+    if (price is double) return price;
+    if (price is String) return double.tryParse(price) ?? 0;
+    return 0;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -74,9 +98,20 @@ class _SaleFormPageState extends State<SaleFormPage> {
                 children: [
                   _buildCustomerSelector(),
                   const SizedBox(height: 24),
-                  ..._items.asMap().entries.map((entry) {
-                    return _buildDismissibleItem(entry.key, entry.value);
-                  }),
+                  if (_items.isEmpty)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 40),
+                        child: Text(
+                          "Belum ada barang dipilih",
+                          style: GoogleFonts.montserrat(color: Colors.grey),
+                        ),
+                      ),
+                    )
+                  else
+                    ..._items.asMap().entries.map((entry) {
+                      return _buildDismissibleItem(entry.key, entry.value);
+                    }),
                   const SizedBox(height: 16),
                   _buildAddItemButton(),
                 ],
@@ -267,7 +302,7 @@ class _SaleFormPageState extends State<SaleFormPage> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Dismissible(
-        key: Key('item_$index'),
+        key: Key('item_${item['id']}_$index'),
         direction: DismissDirection.endToStart,
         background: Container(
           alignment: Alignment.centerRight,
@@ -334,7 +369,7 @@ class _SaleFormPageState extends State<SaleFormPage> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Stok: ${item['stock']} ${item['unit']}',
+                      'Unit: ${item['unit']}',
                       style: GoogleFonts.montserrat(
                         fontSize: 12,
                         color: Colors.grey.shade500,
@@ -344,7 +379,7 @@ class _SaleFormPageState extends State<SaleFormPage> {
                 ),
               ),
               Text(
-                'Rp ${_formatNumber(item['price'] * item['quantity'])}',
+                'Rp ${_formatNumber((item['price'] * item['quantity']).toInt())}',
                 style: GoogleFonts.montserrat(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -357,7 +392,7 @@ class _SaleFormPageState extends State<SaleFormPage> {
           // Controls Row: Unit and Quantity
           Row(
             children: [
-              // Unit Dropdown
+              // Unit Display (Simplification: Just text for now, assuming unit from DB)
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -367,23 +402,12 @@ class _SaleFormPageState extends State<SaleFormPage> {
                   color: AppColors.background,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      item['unit'],
-                      style: GoogleFonts.montserrat(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.keyboard_arrow_down,
-                      size: 18,
-                      color: Colors.grey.shade600,
-                    ),
-                  ],
+                child: Text(
+                  item['unit'],
+                  style: GoogleFonts.montserrat(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
               const Spacer(),
@@ -460,18 +484,7 @@ class _SaleFormPageState extends State<SaleFormPage> {
 
   Widget _buildAddItemButton() {
     return GestureDetector(
-      onTap: () {
-        // TODO: Implement add item logic
-        setState(() {
-          _items.add({
-            'name': 'Produk Baru',
-            'stock': 100,
-            'unit': 'Pcs',
-            'quantity': 1,
-            'price': 25000,
-          });
-        });
-      },
+      onTap: _showProductSearch,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 20),
         decoration: BoxDecoration(
@@ -495,7 +508,7 @@ class _SaleFormPageState extends State<SaleFormPage> {
             ),
             const SizedBox(width: 10),
             Text(
-              'Tambah Barang Lain',
+              'Tambah Barang',
               style: GoogleFonts.montserrat(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
@@ -585,7 +598,13 @@ class _SaleFormPageState extends State<SaleFormPage> {
   }
 
   void _saveForm() {
-    // Build sale summary
+    if (_items.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Pilih barang dulu!')));
+      return;
+    }
+
     final itemSummary = _items
         .map((item) => '${item['name']} x${item['quantity']} ${item['unit']}')
         .join(', ');
@@ -604,6 +623,81 @@ class _SaleFormPageState extends State<SaleFormPage> {
     return number.toString().replaceAllMapped(
       RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
       (m) => '${m[1]}.',
+    );
+  }
+}
+
+class ProductSearchDelegate extends SearchDelegate<Map<String, dynamic>?> {
+  final ApiService apiService;
+
+  ProductSearchDelegate({required this.apiService});
+
+  @override
+  List<Widget>? buildActions(BuildContext context) {
+    return [
+      IconButton(
+        icon: const Icon(Icons.clear),
+        onPressed: () {
+          query = '';
+        },
+      ),
+    ];
+  }
+
+  @override
+  Widget? buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () {
+        close(context, null);
+      },
+    );
+  }
+
+  @override
+  Widget buildResults(BuildContext context) {
+    return _buildSearchResults();
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    return _buildSearchResults();
+  }
+
+  Widget _buildSearchResults() {
+    if (query.isEmpty) {
+      return Container();
+    }
+
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: apiService.searchProducts(query),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const Center(child: Text("Produk tidak ditemukan"));
+        }
+
+        final results = snapshot.data!;
+
+        return ListView.builder(
+          itemCount: results.length,
+          itemBuilder: (context, index) {
+            final product = results[index];
+            return ListTile(
+              title: Text(product['display_name'] ?? product['name']),
+              subtitle: Text(
+                "Unit: ${product['unit']} | Kategori: ${product['category'] ?? '-'}",
+              ),
+              onTap: () {
+                close(context, product);
+              },
+            );
+          },
+        );
+      },
     );
   }
 }

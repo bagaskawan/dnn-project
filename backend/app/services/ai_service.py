@@ -585,7 +585,7 @@ def check_draft_duplication(response: dict, current_draft: dict):
         # Beri notifikasi santai kalau ada yang mirip
         if duplicate_count > 0:
             dup_str = ", ".join([d['existing_display'] for d in duplicate_matches])
-            msg += f"\n\n⚠️ {duplicate_count} produk lainnya ({dup_str}) sudah ada di draft. Saya skip ya biar nggak dobel."
+            msg += f"\n\n {duplicate_count} produk lainnya ({dup_str}) sudah ada di draft. Saya skip ya biar nggak dobel."
         
         response['follow_up_question'] = msg
         response['suggested_actions'] = ["Edit", "Simpan"]
@@ -675,6 +675,95 @@ def check_supplier_duplication(ai_response: dict, known_suppliers: list) -> dict
     
     return ai_response
 
+    return ai_response
+
+async def parse_sale_text(text_input: str, current_draft: dict = None, known_products: list = None):
+    """
+    Parse text for SALE context (Penjualan).
+    Focus: Extract Product & Qty. Price defaults to latest_selling_price if not specified.
+    """
+    try:
+        rag_context = ""
+        if known_products:
+            # Include Price in context for AI to know default price
+            lines = [f"- {p['name']} ({p.get('variant','')}) @ Rp {p.get('latest_selling_price', 0)}" for p in known_products[:100]]
+            rag_context = "AVAILABLE PRODUCTS & PRICES:\n" + "\n".join(lines)
+
+        draft_context = ""
+        if current_draft:
+            draft_context = f"CURRENT_SALE_DRAFT:\n{json.dumps(current_draft, ensure_ascii=False)}\n"
+
+        system_prompt = """
+        You are 'Kasir Pintar', an AI assistant for recording SALES (Penjualan).
+        Respond in casual Indonesian.
+
+        ## GOAL
+        Extract items sold from user chat.
+        User might say: "Jual Kopi 5pcs" or "Laku Beras 2 karung".
+
+        ## RULES
+        1. **Action**: "new" (if starting/replacing), "append" (adding items), "chat" (if unclear).
+        2. **Customer**: Default to "Pelanggan Umum" if not specified.
+        3. **Price Logic**:
+        - If user doesn't specify price, use 0 (Frontend will fill with database price).
+        - If user specifies "seharga 50rb", use that as total_price.
+
+        ## JSON OUTPUT:
+        {
+        "action": "new|append|chat",
+        "customer_name": "string",
+        "items": [{"product_name":"", "variant":"", "qty":0, "unit":"pcs", "total_price":0, "notes":""}],
+        "follow_up_question": "string"
+        }
+        """
+        prompt = system_prompt + f"\n{rag_context}"
+
+        completion = client.chat.completions.create(
+            model=GROQ_TEXT_MODEL,
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": f"{draft_context}USER INPUT:\n{text_input}"}
+            ],
+            temperature=0.3,
+            response_format={"type": "json_object"}
+        )
+        
+        ai_response = json.loads(completion.choices[0].message.content)
+        
+        # Post-processing: Normalize items
+        for item in ai_response.get('items', []):
+            normalize_item_data(item, product_context=known_products)
+            
+            # fuzzy match logic reusing existing function logic (simplified)
+            # Find matching product in known_products to get official name and default price
+            if known_products:
+                # Simple fuzzy check
+                best_p = None
+                best_s = 0
+                item_name = f"{item.get('product_name')} {item.get('variant') or ''}".strip().lower()
+                
+                for p in known_products:
+                     p_name = f"{p['name']} {p.get('variant') or ''}".strip().lower()
+                     score = fuzz.partial_ratio(item_name, p_name)
+                     if score > best_s:
+                         best_s = score
+                         best_p = p
+                
+                if best_p and best_s > 70:
+                    item['product_name'] = best_p['name']
+                    item['variant'] = best_p['variant']
+                    # Use DB price if AI didn't catch specific price
+                    if item.get('total_price', 0) == 0:
+                        unit_price = float(best_p.get('latest_selling_price', 0))
+                        item['unit_price'] = unit_price
+                        item['total_price'] = unit_price * float(item.get('qty', 0))
+
+        return ai_response
+
+    except Exception as e:
+        print(f"Error Parse Sale: {e}")
+        return {"action": "chat", "follow_up_question": "Maaf, sistem sedang sibuk.", "items": []}
+
 # --- MAIN EXPORT FUNCTION ---
 
 async def parse_procurement_text(text_input: str, current_draft: dict = None, known_products: list = None, known_suppliers: list = None):
@@ -758,111 +847,111 @@ async def parse_procurement_image(image_bytes, current_draft: dict = None, known
             rag_context = f"KNOWN PRODUCTS IN DATABASE (gunakan untuk koreksi typo):\n" + "\n".join(product_names)
         
         ocr_parse_prompt = f"""
-Kamu adalah asisten yang mengolah hasil OCR struk belanjaan grosir/reseller Indonesia.
+        Kamu adalah asisten yang mengolah hasil OCR struk belanjaan grosir/reseller Indonesia.
 
-## TEKS OCR:
-{raw_text}
+        ## TEKS OCR:
+        {raw_text}
 
-{rag_context}
+        {rag_context}
 
-## ATURAN PARSING SUPPLIER - SANGAT PENTING!
+        ## ATURAN PARSING SUPPLIER - SANGAT PENTING!
 
-### 0. PISAHKAN NAMA SUPPLIER DAN ALAMAT (CRITICAL!):
-- **supplier_name**: HANYA nama toko/usaha (Toko X, UD X, CV X, PT X, Pak/Bu X)
-- **supplier_address**: Alamat lengkap yang biasanya diawali dengan:
-  - "Jl.", "Jln.", "Jalan" (nama jalan)
-  - "Kec.", "Kecamatan" (kecamatan)
-  - "Kab.", "Kabupaten", "Kota" (kota/kabupaten)
-  - "No.", "Blok", "RT", "RW" (nomor rumah/blok)
+        ### 0. PISAHKAN NAMA SUPPLIER DAN ALAMAT (CRITICAL!):
+        - **supplier_name**: HANYA nama toko/usaha (Toko X, UD X, CV X, PT X, Pak/Bu X)
+        - **supplier_address**: Alamat lengkap yang biasanya diawali dengan:
+        - "Jl.", "Jln.", "Jalan" (nama jalan)
+        - "Kec.", "Kecamatan" (kecamatan)
+        - "Kab.", "Kabupaten", "Kota" (kota/kabupaten)
+        - "No.", "Blok", "RT", "RW" (nomor rumah/blok)
 
-CONTOH BENAR:
-Struk Header:
-```
-Toko Yunden Jaya
-Jl. Raya Nanjung no.8
-kec. Margaasih Kab. Bandung
-```
-→ supplier_name: "Toko Yunden Jaya" (HANYA ini!)
-→ supplier_address: "Jl. Raya Nanjung no.8, kec. Margaasih Kab. Bandung"
+        CONTOH BENAR:
+        Struk Header:
+        ```
+        Toko Yunden Jaya
+        Jl. Raya Nanjung no.8
+        kec. Margaasih Kab. Bandung
+        ```
+        → supplier_name: "Toko Yunden Jaya" (HANYA ini!)
+        → supplier_address: "Jl. Raya Nanjung no.8, kec. Margaasih Kab. Bandung"
 
-CONTOH SALAH:
-→ supplier_name: "Toko Yunden Jaya Raya" ❌ (kata "Raya" adalah bagian dari alamat!)
+        CONTOH SALAH:
+        → supplier_name: "Toko Yunden Jaya Raya" ❌ (kata "Raya" adalah bagian dari alamat!)
 
-### TIPS IDENTIFIKASI:
-- Nama supplier biasanya di BARIS PERTAMA dan berformat "Toko/UD/CV + Nama"
-- Alamat biasanya di baris KEDUA dan KETIGA
-- JANGAN gabungkan baris alamat ke nama supplier!
+        ### TIPS IDENTIFIKASI:
+        - Nama supplier biasanya di BARIS PERTAMA dan berformat "Toko/UD/CV + Nama"
+        - Alamat biasanya di baris KEDUA dan KETIGA
+        - JANGAN gabungkan baris alamat ke nama supplier!
 
----
+        ---
 
-## ATURAN PARSING GROSIR - SANGAT PENTING!
+        ## ATURAN PARSING GROSIR - SANGAT PENTING!
 
-### 1. PERBEDAAN QTY vs VARIANT:
-- **qty**: JUMLAH YANG DIBELI (angka berdiri sendiri, biasanya di kolom qty struk)
-- **variant**: UKURAN/ISI KEMASAN (angka yang menempel dengan kg/gr/L/isi)
-- **unit**: SATUAN PEMBELIAN (Karton/Dus/Bungkus/Pcs, BUKAN kg jika kg adalah variant!)
+        ### 1. PERBEDAAN QTY vs VARIANT:
+        - **qty**: JUMLAH YANG DIBELI (angka berdiri sendiri, biasanya di kolom qty struk)
+        - **variant**: UKURAN/ISI KEMASAN (angka yang menempel dengan kg/gr/L/isi)
+        - **unit**: SATUAN PEMBELIAN (Karton/Dus/Bungkus/Pcs, BUKAN kg jika kg adalah variant!)
 
-### 2. CONTOH PARSING BENAR:
+        ### 2. CONTOH PARSING BENAR:
 
-KASUS KARTONAN:
-Struk: "Kara Santan Kartonan isi 36 | 1 | Rp 175.000"
-→ product_name: "Kara Santan Kartonan"
-→ variant: "Isi 36"
-→ qty: 1
-→ unit: "Karton"
-→ total_price: 175000
+        KASUS KARTONAN:
+        Struk: "Kara Santan Kartonan isi 36 | 1 | Rp 175.000"
+        → product_name: "Kara Santan Kartonan"
+        → variant: "Isi 36"
+        → qty: 1
+        → unit: "Karton"
+        → total_price: 175000
 
-KASUS UKURAN BERAT:
-Struk: "Singkong jadul ORI 1kg | 5 | Rp 17.000 | Rp 85.000"  
-→ product_name: "Singkong Jadul ORI"
-→ variant: "1kg"
-→ qty: 5 (BUKAN 1! Angka berdiri sendiri = qty)
-→ unit: "Bungkus" (BUKAN kg! kg adalah variant)
-→ unit_price: 17000
-→ total_price: 85000
+        KASUS UKURAN BERAT:
+        Struk: "Singkong jadul ORI 1kg | 5 | Rp 17.000 | Rp 85.000"  
+        → product_name: "Singkong Jadul ORI"
+        → variant: "1kg"
+        → qty: 5 (BUKAN 1! Angka berdiri sendiri = qty)
+        → unit: "Bungkus" (BUKAN kg! kg adalah variant)
+        → unit_price: 17000
+        → total_price: 85000
 
-Struk: "Singkong jadul balado 1kg | 2 | Rp 20.000 | Rp 40.000"
-→ product_name: "Singkong Jadul Balado"
-→ variant: "1kg"
-→ qty: 2 (BUKAN 1!)
-→ unit: "Bungkus"
-→ total_price: 40000
+        Struk: "Singkong jadul balado 1kg | 2 | Rp 20.000 | Rp 40.000"
+        → product_name: "Singkong Jadul Balado"
+        → variant: "1kg"
+        → qty: 2 (BUKAN 1!)
+        → unit: "Bungkus"
+        → total_price: 40000
 
-### 3. KOREKSI TYPO OCR:
-- "Jongkong" → "Singkong"
-- "Baladu" → "Balado"
-- "tomyurn" → "tomyum"
-- "Karuan" → "Kartonan"
+        ### 3. KOREKSI TYPO OCR:
+        - "Jongkong" → "Singkong"
+        - "Baladu" → "Balado"
+        - "tomyurn" → "tomyum"
+        - "Karuan" → "Kartonan"
 
-### 4. HITUNG QTY DARI HARGA (CRITICAL!):
-- Jika OCR tidak menangkap qty tapi ada harga satuan dan total:
-- **qty = total_price / unit_price**
-- Contoh: unit_price=17.000, total=85.000 → qty = 5
-- Contoh: unit_price=20.000, total=40.000 → qty = 2
-- JANGAN default ke qty=1 jika bisa dihitung!
+        ### 4. HITUNG QTY DARI HARGA (CRITICAL!):
+        - Jika OCR tidak menangkap qty tapi ada harga satuan dan total:
+        - **qty = total_price / unit_price**
+        - Contoh: unit_price=17.000, total=85.000 → qty = 5
+        - Contoh: unit_price=20.000, total=40.000 → qty = 2
+        - JANGAN default ke qty=1 jika bisa dihitung!
 
-## OUTPUT FORMAT (JSON):
-{{
-  "action": "new",
-  "supplier_name": "Nama Toko",
-  "supplier_phone": "Nomor HP",
-  "supplier_address": "Alamat",
-  "transaction_date": "YYYY-MM-DD",
-  "receipt_number": "Nomor nota",
-  "items": [
-    {{"product_name":"Nama Produk", "variant":"ukuran/isi", "qty":1, "unit":"Karton/Bungkus/Pcs", "unit_price":0, "total_price":0, "notes":null}}
-  ],
-  "subtotal": 0,
-  "total": 0,
-  "payment_method": "Tunai/Transfer",
-  "follow_up_question": "Struk terbaca! Cek qty dan variannya ya Kak?",
-  "confidence_score": 0.85
-}}
+        ## OUTPUT FORMAT (JSON):
+        {{
+        "action": "new",
+        "supplier_name": "Nama Toko",
+        "supplier_phone": "Nomor HP",
+        "supplier_address": "Alamat",
+        "transaction_date": "YYYY-MM-DD",
+        "receipt_number": "Nomor nota",
+        "items": [
+            {{"product_name":"Nama Produk", "variant":"ukuran/isi", "qty":1, "unit":"Karton/Bungkus/Pcs", "unit_price":0, "total_price":0, "notes":null}}
+        ],
+        "subtotal": 0,
+        "total": 0,
+        "payment_method": "Tunai/Transfer",
+        "follow_up_question": "Struk terbaca! Cek qty dan variannya ya Kak?",
+        "confidence_score": 0.85
+        }}
 
-## PENTING - JANGAN SKIP PRODUK!
-- Ekstrak SEMUA produk yang ada di teks OCR
-- Jika ada produk yang tidak jelas, tetap masukkan dengan confidence rendah
-"""
+        ## PENTING - JANGAN SKIP PRODUK!
+        - Ekstrak SEMUA produk yang ada di teks OCR
+        - Jika ada produk yang tidak jelas, tetap masukkan dengan confidence rendah
+        """
         
         completion = client.chat.completions.create(
             model=GROQ_TEXT_MODEL,

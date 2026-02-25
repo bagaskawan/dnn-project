@@ -361,13 +361,19 @@ class _AddStockModalState extends State<AddStockModal> {
 
   Future<void> _saveStock() async {
     // Validate Qty
-    if (_qtyController.text.isEmpty) {
+    final qtyText = _qtyController.text.replaceAll('.', '');
+    if (qtyText.isEmpty) {
       await _showError('Jumlah stok wajib diisi!');
+      return;
+    }
+    final qty = double.tryParse(qtyText);
+    if (qty == null || qty <= 0) {
+      await _showError('Jumlah stok harus lebih dari 0!');
       return;
     }
 
     // Validate Supplier
-    if (_supplierController.text.isEmpty) {
+    if (_supplierController.text.trim().isEmpty) {
       await _showError('Nama supplier wajib diisi!');
       return;
     }
@@ -380,40 +386,46 @@ class _AddStockModalState extends State<AddStockModal> {
       await _showError('Total harga beli wajib diisi!');
       return;
     }
+    final totalBuyPrice = double.tryParse(buyPriceText);
+    if (totalBuyPrice == null || totalBuyPrice <= 0) {
+      await _showError('Total harga beli tidak valid!');
+      return;
+    }
 
     setState(() => _isLoading = true);
 
-    final data = {
-      'qty': double.tryParse(_qtyController.text.replaceAll('.', '')) ?? 0,
-      'supplier_name': _supplierController.text,
-      'supplier_phone': _phoneController.text.isEmpty
-          ? null
-          : _phoneController.text,
-      'total_buy_price': double.tryParse(buyPriceText),
-    };
+    try {
+      final data = {
+        'qty': qty,
+        'supplier_name': _supplierController.text.trim(),
+        'supplier_phone': _phoneController.text.trim().isEmpty
+            ? null
+            : _phoneController.text.trim(),
+        'total_buy_price': totalBuyPrice,
+      };
 
-    final result = await _apiService.addProductStock(
-      widget.product['id'],
-      data,
-    );
+      final result = await _apiService.addProductStock(
+        widget.product['id'],
+        data,
+      );
 
-    setState(() => _isLoading = false);
-
-    if (result != null && result['success'] == true) {
       if (mounted) {
-        Navigator.pop(context, true); // Return true to indicate refresh needed
+        setState(() => _isLoading = false);
+
+        if (result != null && result['success'] == true) {
+          Navigator.pop(
+            context,
+            true,
+          ); // Return true to indicate refresh needed
+          // Parent page handles the success SnackBar
+        } else {
+          _showError(result?['message'] ?? 'Gagal menambahkan stok');
+        }
       }
-    } else {
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Gagal menambahkan stok',
-              style: GoogleFonts.montserrat(),
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
+        setState(() => _isLoading = false);
+        _showError('Terjadi kesalahan: $e');
       }
     }
   }

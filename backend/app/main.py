@@ -1,15 +1,17 @@
 from contextlib import asynccontextmanager
 import databases
 import os
+import io
 import json
+import uuid
 import sys
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from app.schemas import ProcurementDraft, ChatInput, CommitTransactionInput, CommitTransactionResponse, TransactionListItem, TransactionDetailResponse, TransactionItemDetail, ContactItem, ContactCreateInput, ContactUpdateInput, ContactStats, ProductHistoryItem, ProductListItem, ProductDetailResponse, ProductUpdateInput, ProductStockAddInput
-from typing import List
-from app.services.ai_service import parse_procurement_text, parse_procurement_image
-from app.services.commit_service import commit_transaction_logic
+from app.schemas import ProcurementDraft, ChatInput, CommitTransactionInput, CommitTransactionResponse, TransactionListItem, TransactionDetailResponse, TransactionItemDetail, ContactItem, ContactCreateInput, ContactUpdateInput, ContactStats, ProductHistoryItem, ProductListItem, ProductDetailResponse, ProductUpdateInput, ProductStockAddInput, SaleDraft, CommitSaleInput
+from typing import List, Optional
+from app.services.ai_service import parse_procurement_text, parse_procurement_image, parse_sale_text
+from app.services.commit_service import commit_transaction_logic, commit_sale_logic, generate_invoice_number
 
 # Load environment variables dari file .env
 load_dotenv()
@@ -197,6 +199,33 @@ async def match_product(name: str, variant: str = None):
         return {"query": {"name": name, "variant": variant}, "candidates": [], "has_exact_match": False, "needs_confirmation": False}
 
 # --- ENDPOINT IMAGE UPLOAD ---
+    return result
+
+# --- ENDPOINT PARSE SALE TEXT ---
+@app.post("/api/v1/parse/sale")
+async def parse_sale_endpoint(chat_data: ChatInput):
+    """
+    Endpoint for parsing SALE chat.
+    """
+    print(f"[API_SALE] Received Input: {chat_data.new_message}")
+    
+    known_products = []
+    try:
+        query = "SELECT name, variant, base_unit, category, latest_selling_price FROM products"
+        rows = await database.fetch_all(query=query)
+        known_products = [dict(row) for row in rows]
+    except Exception as e:
+        print(f"⚠️ DB Error: {e}")
+
+    result = await parse_sale_text(
+        text_input=chat_data.new_message,
+        current_draft=chat_data.current_draft,
+        known_products=known_products
+    )
+    return result
+
+
+# --- ENDPOINT PARSE IMAGE (PROCUREMENT) ---
 @app.post("/api/v1/parse/image")
 async def parse_image_endpoint(file: UploadFile = File(...), current_draft_str: str = None):
     # Note: current_draft dikirim sebagai string JSON jika lewat Form Data (Multipart)
@@ -259,6 +288,23 @@ async def commit_transaction_endpoint(data: CommitTransactionInput):
     sys.stdout.flush()
     
     return CommitTransactionResponse(**result)
+
+
+    return CommitTransactionResponse(**result)
+
+
+# --- ENDPOINT COMMIT SALE ---
+@app.post("/api/v1/sales/commit")
+async def commit_sale_endpoint(data: CommitSaleInput):
+    print(f"[COMMIT SALE] Customer: {data.customer_name}, Items: {len(data.items)}")
+    try:
+        result = await commit_sale_logic(database, data)
+        return result
+    except Exception as e:
+        print(f"[COMMIT SALE ERROR] {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- ENDPOINT GET TRANSACTIONS LIST ---
@@ -823,8 +869,8 @@ async def add_product_stock(product_id: str, data: ProductStockAddInput):
             # For direct stock add, conversion rate is 1 (base unit)
             # input_price in transaction_items is UNIT PRICE because subtotal is generated (qty * price)
             insert_item = """
-                INSERT INTO transaction_items (id, transaction_id, product_id, input_qty, input_unit, conversion_rate, input_price, cost_price_at_moment, subtotal)
-                VALUES (CAST(:id AS uuid), CAST(:tid AS uuid), CAST(:pid AS uuid), :qty, :unit, 1.0, :unit_price, :cost_at_moment, :subtotal)
+                INSERT INTO transaction_items (id, transaction_id, product_id, input_qty, input_unit, conversion_rate, input_price, cost_price_at_moment)
+                VALUES (CAST(:id AS uuid), CAST(:tid AS uuid), CAST(:pid AS uuid), :qty, :unit, 1.0, :unit_price, :cost_at_moment)
             """
             await database.execute(query=insert_item, values={
                 "id": item_id,
@@ -834,7 +880,6 @@ async def add_product_stock(product_id: str, data: ProductStockAddInput):
                 "unit": product["base_unit"],
                 "unit_price": unit_price,
                 "cost_at_moment": unit_price,
-                "subtotal": total_amount
             })
 
             # 4. Update Product Stock & Average Cost

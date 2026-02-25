@@ -1,13 +1,24 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../../models/procurement_draft.dart';
+import '../../models/sale_draft.dart';
 
 class ApiService {
   // Ganti dengan IP Laptop kamu seperti sebelumnya
   static const String baseUrl = 'http://10.0.2.2:8000';
 
-  final Dio _dio = Dio(BaseOptions(baseUrl: baseUrl));
+  static final ApiService _instance = ApiService._internal();
+  late final Dio _dio;
+
+  factory ApiService() {
+    return _instance;
+  }
+
+  ApiService._internal() {
+    _dio = Dio(BaseOptions(baseUrl: baseUrl));
+  }
 
   // 1. Kirim Chat Teks dengan Context Draft
   Future<ProcurementDraft?> parseText(
@@ -80,12 +91,64 @@ class ApiService {
       }
       return [];
     } catch (e) {
-      print("Error Search API: $e");
-      return [];
+      print("Error Commit API: $e");
+      rethrow;
     }
   }
 
-  // 4. Commit Transaction to Database
+  // 4. Parse Sale Text (AI Chat for Sale)
+  Future<SaleDraft?> parseSaleText(
+    String message,
+    SaleDraft? currentDraft,
+  ) async {
+    try {
+      final response = await _dio.post(
+        '/api/v1/parse/sale',
+        data: {'new_message': message, 'current_draft': currentDraft?.toJson()},
+      );
+
+      if (response.statusCode == 200) {
+        return SaleDraft.fromJson(response.data);
+      }
+      return null;
+    } catch (e) {
+      print("Error Sale AI API: $e");
+      return null;
+    }
+  }
+
+  // 5. Commit Sale Transaction
+  Future<Map<String, dynamic>?> commitSale(SaleDraft draft) async {
+    try {
+      // Calculate total if missing
+      double total = draft.total ?? 0;
+      if (total == 0) {
+        for (var item in draft.items) {
+          total += item.totalPrice;
+        }
+      }
+
+      final data = {
+        "customer_name": draft.customerName,
+        "items": draft.items.map((e) => e.toJson()).toList(),
+        "total": total,
+        "payment_method": "TUNAI",
+        "transaction_date": "NOW",
+      };
+
+      final response = await _dio.post('/api/v1/sales/commit', data: data);
+
+      if (response.statusCode == 200) {
+        return response.data as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      print("Error Commit Sale API: $e");
+      rethrow;
+    }
+  }
+
+  // 6. Commit Transaction to Database
   Future<CommitTransactionResponse> commitTransaction(
     ProcurementDraft draft, {
     String? evidenceUrl,
@@ -263,9 +326,8 @@ class ApiService {
       final response = await _dio.get('/api/v1/products/$productId/history');
 
       if (response.statusCode == 200) {
-        return (response.data as List)
-            .map((e) => ProductHistoryItem.fromJson(e))
-            .toList();
+        // Use compute to parse in background isolate
+        return await compute(_parseProductHistory, response.data);
       }
       return [];
     } catch (e) {
@@ -310,6 +372,21 @@ class ApiService {
       return null;
     } catch (e) {
       print("Error Get Product Detail API: $e");
+      return null;
+    }
+  }
+
+  // Create Product
+  Future<Map<String, dynamic>?> createProduct(Map<String, dynamic> data) async {
+    try {
+      final response = await _dio.post('/api/v1/products', data: data);
+
+      if (response.statusCode == 200) {
+        return response.data as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      print("Error Create Product API: $e");
       return null;
     }
   }
@@ -666,4 +743,9 @@ class ContactItem {
       'created_at': createdAt,
     };
   }
+}
+
+// Top-level function for compute
+List<ProductHistoryItem> _parseProductHistory(dynamic data) {
+  return (data as List).map((e) => ProductHistoryItem.fromJson(e)).toList();
 }

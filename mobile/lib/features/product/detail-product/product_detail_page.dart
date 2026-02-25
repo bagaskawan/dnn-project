@@ -62,13 +62,16 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
 
     setState(() => _isRecalculating = true);
 
+    // Capture messenger before async gap to avoid "Deactivated Widget" error
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
     final result = await _apiService.recalculateProduct(productId.toString());
 
     if (result != null && result['success'] == true) {
       // Refresh product detail to get updated average_cost
       await _fetchProductDetail();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        scaffoldMessenger.showSnackBar(
           SnackBar(
             content: Text(
               result['message'] ?? 'Harga modal berhasil diperbarui',
@@ -80,7 +83,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       }
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        scaffoldMessenger.showSnackBar(
           const SnackBar(
             content: Text('Gagal memperbarui harga modal'),
             backgroundColor: Colors.red,
@@ -732,6 +735,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                             );
 
                             if (result != null) {
+                              if (!mounted) return;
                               setState(() {
                                 _product = {..._product, ...result};
                                 // Normalize keys for immediate UI update
@@ -748,11 +752,17 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                                       result['average_cost'];
                                 }
                               });
+                              /* Fixed context safety */
+                              final scaffoldMessenger = ScaffoldMessenger.of(
+                                context,
+                              );
+
                               // Re-fetch full product detail to get updated computed fields
                               await _fetchProductDetail();
+
                               if (mounted) {
                                 Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
+                                scaffoldMessenger.showSnackBar(
                                   SnackBar(
                                     content: Text(
                                       'Harga jual berhasil diatur',
@@ -822,7 +832,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => Container(
+      builder: (modalContext) => Container(
         padding: const EdgeInsets.symmetric(vertical: 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -840,7 +850,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 style: GoogleFonts.montserrat(fontSize: 12, color: Colors.grey),
               ),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(modalContext);
                 _showEditProductModal(context);
               },
             ),
@@ -857,7 +867,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 style: GoogleFonts.montserrat(fontSize: 12, color: Colors.grey),
               ),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(modalContext);
                 _showAddStockModal(context);
               },
             ),
@@ -868,6 +878,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   }
 
   void _showAddStockModal(BuildContext context) async {
+    // Capture messenger before async gap
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
     final result = await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -876,11 +889,13 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     );
 
     if (result == true) {
+      if (!mounted) return;
+
       // Refresh data
       await Future.wait([_fetchProductDetail(), _fetchHistory()]);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        scaffoldMessenger.showSnackBar(
           SnackBar(
             content: Text(
               'Stok berhasil ditambahkan',
@@ -894,6 +909,9 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   }
 
   void _showEditProductModal(BuildContext context) async {
+    // Capture messenger before async gap
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
     final result = await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -902,6 +920,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     );
 
     if (result != null && result is Map<String, dynamic>) {
+      if (!mounted) return;
       setState(() {
         _product = {..._product, ...result};
         // Normalize keys for immediate UI update
@@ -915,10 +934,12 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           _product['average_cost'] = result['average_cost'];
         }
       });
+
       // Re-fetch full product detail to get updated computed fields
       await _fetchProductDetail();
+
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        scaffoldMessenger.showSnackBar(
           SnackBar(
             content: Text(
               'Produk berhasil diperbarui',

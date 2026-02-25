@@ -38,6 +38,14 @@ class ProcurementDraft(BaseModel):
     # Supplier confirmation field
     supplier_candidate: Optional[dict] = None  # Info about similar supplier: {name, phone, similarity}
 
+class SaleDraft(BaseModel):
+    action: Optional[str] = "new"
+    customer_name: Optional[str] = "Pelanggan Umum"
+    items: List[ExtractedItem]
+    total: Optional[float] = None
+    follow_up_question: Optional[str] = None
+    suggested_actions: Optional[List[str]] = None
+
 
 # --- COMMIT TRANSACTION SCHEMAS ---
 class CommitTransactionInput(BaseModel):
@@ -53,6 +61,14 @@ class CommitTransactionInput(BaseModel):
     payment_method: Optional[str] = None
     input_source: str = "OCR"  # OCR atau MANUAL
     evidence_url: Optional[str] = None  # Path gambar struk
+
+class CommitSaleInput(BaseModel):
+    """Input schema for committing a sale transaction."""
+    customer_name: str
+    items: List[ExtractedItem]
+    total: float
+    payment_method: Optional[str] = "TUNAI"
+    transaction_date: str = "NOW"
 
 
 class CommitTransactionResponse(BaseModel):
