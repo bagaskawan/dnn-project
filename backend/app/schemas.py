@@ -153,10 +153,6 @@ class ContactUpdateInput(BaseModel):
     address: Optional[str] = None
     notes: Optional[str] = None
 
-    address: Optional[str] = None
-    notes: Optional[str] = None
-
-
 class ContactStats(BaseModel):
     """Schema for contact transaction statistics."""
     count: int

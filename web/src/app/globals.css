@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+  --color-app-bg: #f8ece3;
+  --color-app-surface: #fbf6ed;
+  --color-app-text: #1e1e1e;
+  --color-app-muted: #8e8e8e;
+  --color-app-gold: #fce9c0;
+  --color-app-blue: #b9d8fc;
+  --color-app-purple: #d3bafe;
+  --color-app-salmon: #fbcbbd;
+  --color-app-pink: #ffb4ea;
+  --color-app-rose: #ffb1cc;
+}
