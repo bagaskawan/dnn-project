@@ -96,6 +96,20 @@ class TransactionListItem(BaseModel):
     contact_address: Optional[str] = None
     created_at: str
 
+class TransactionStats(BaseModel):
+    total_count: int
+    total_amount_in: float
+    total_amount_out: float
+
+class FinancialProfitLoss(BaseModel):
+    """Schema for Profit & Loss (Laba Rugi) response."""
+    revenue: float
+    cogs: float  # Cost of Goods Sold / HPP
+    gross_profit: float
+    operational_expenses: float
+    net_profit: float
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
 
 class TransactionItemDetail(BaseModel):
     """Schema for transaction item detail."""
@@ -158,6 +172,11 @@ class ContactStats(BaseModel):
     count: int
     total_amount: float
 
+class ContactSummary(BaseModel):
+    """Schema for total customers and suppliers."""
+    total_customers: int
+    total_suppliers: int
+
 
 class ProductHistoryItem(BaseModel):
     """Schema for product history/stock ledger item."""
@@ -193,6 +212,20 @@ class ProductDetailResponse(ProductListItem):
     needs_recalculation: bool = False
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+
+class ProductCreateInput(BaseModel):
+    name: str
+    sku: Optional[str] = None
+    base_unit: Optional[str] = "pcs"
+    category: Optional[str] = None
+    variant: Optional[str] = None
+    latest_selling_price: Optional[float] = 0
+
+class ProductStats(BaseModel):
+    total: int
+    low_stock: int
+    out_of_stock: int
 
 
 class ProductUpdateInput(BaseModel):

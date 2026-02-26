@@ -1,7 +1,8 @@
-import { Montserrat } from 'next/font/google';
+import { Montserrat } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "../components/theme-provider";
 
-const montserrat = Montserrat({ subsets: ['latin'] });
+const montserrat = Montserrat({ subsets: ["latin"] });
 
 // 🚀 APP ROUTER: Root layout (Provider pembungkus keseluruhan app)
 export const metadata = {
@@ -15,8 +16,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className={`${montserrat.className} text-app-text bg-app-bg antialiased`}>{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <body
+        className={`${montserrat.className} text-app-text bg-app-bg antialiased`}
+      >
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          {children}
+        </ThemeProvider>
+      </body>
     </html>
   );
 }

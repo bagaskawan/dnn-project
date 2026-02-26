@@ -1,14 +1,53 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:is(.dark *));
+
 @theme {
-  --color-app-bg: #f8ece3;
-  --color-app-surface: #fbf6ed;
-  --color-app-text: #1e1e1e;
-  --color-app-muted: #8e8e8e;
-  --color-app-gold: #fce9c0;
-  --color-app-blue: #b9d8fc;
-  --color-app-purple: #d3bafe;
-  --color-app-salmon: #fbcbbd;
-  --color-app-pink: #ffb4ea;
-  --color-app-rose: #ffb1cc;
+  --color-app-bg: var(--app-bg);
+  --color-app-surface: var(--app-surface);
+  --color-app-text: var(--app-text);
+  --color-app-muted: var(--app-muted);
+  --color-app-gold: var(--app-gold);
+  --color-app-blue: var(--app-blue);
+  --color-app-purple: var(--app-purple);
+  --color-app-salmon: var(--app-salmon);
+  --color-app-pink: var(--app-pink);
+  --color-app-rose: var(--app-rose);
+}
+
+@layer base {
+  :root {
+    --app-bg: #f8ece3;
+    --app-surface: #fbf6ed;
+    --app-text: #1e1e1e;
+    --app-muted: #8e8e8e;
+    --app-gold: #fce9c0;
+    --app-blue: #b9d8fc;
+    --app-purple: #d3bafe;
+    --app-salmon: #fbcbbd;
+    --app-pink: #ffb4ea;
+    --app-rose: #ffb1cc;
+  }
+
+  .dark {
+    --app-bg: #252527; /* Muted, noticeably darker background for layout */
+    --app-surface: #26262b; /* User-requested color from inspect element */
+    --app-text: #f3f4f6; /* Off-white text */
+    --app-muted: #9ca3af; /* Muted text */
+
+    /* Neon/Accent colors for charts and borders in dark mode */
+    --app-gold: #fbbf24;
+    --app-blue: #60a5fa;
+    --app-purple: #c084fc;
+    --app-salmon: #f87171;
+    --app-pink: #f472b6;
+    --app-rose: #fb7185;
+  }
+}
+
+/* Global smooth transition for theme switching */
+* {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 300ms;
 }

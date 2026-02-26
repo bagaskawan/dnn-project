@@ -10,7 +10,7 @@ from app.services.commit_service import commit_transaction_logic, generate_invoi
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from app.schemas import ProcurementDraft, ChatInput, CommitTransactionInput, CommitTransactionResponse, TransactionListItem, TransactionDetailResponse, TransactionItemDetail, ContactItem, ContactCreateInput, ContactUpdateInput, ContactStats, ProductHistoryItem, ProductListItem, ProductDetailResponse, ProductUpdateInput, ProductStockAddInput, SaleDraft, CommitSaleInput
+from app.schemas import ProcurementDraft, ChatInput, CommitTransactionInput, CommitTransactionResponse, TransactionListItem, TransactionDetailResponse, TransactionItemDetail, TransactionStats, FinancialProfitLoss, ContactItem, ContactCreateInput, ContactUpdateInput, ContactStats, ContactSummary, ProductHistoryItem, ProductListItem, ProductDetailResponse, ProductUpdateInput, ProductStockAddInput, ProductStats, ProductCreateInput, SaleDraft, CommitSaleInput
 from typing import List, Optional
 from app.services.ai_service import parse_procurement_text, parse_procurement_image, parse_sale_text
 from app.services.commit_service import commit_transaction_logic, commit_sale_logic, generate_invoice_number
@@ -311,11 +311,17 @@ async def commit_sale_endpoint(data: CommitSaleInput):
 
 # --- ENDPOINT GET TRANSACTIONS LIST ---
 @app.get("/api/v1/transactions", response_model=list[TransactionListItem])
-async def get_transactions(limit: int = 20, offset: int = 0, contact_id: str = None):
+async def get_transactions(
+    limit: int = 20, 
+    offset: int = 0, 
+    contact_id: str = None,
+    type: str = None,
+    date_from: str = None,
+    date_to: str = None,
+    search: str = None
+):
     """
-    Get list of transactions for home page.
-    Returns transactions with contact info, ordered by date DESC.
-    Optionally filter by contact_id.
+    Get list of transactions with extensive filtering.
     """
     try:
         base_query = """
@@ -333,6 +339,22 @@ async def get_transactions(limit: int = 20, offset: int = 0, contact_id: str = N
         if contact_id:
             conditions.append("t.contact_id = CAST(:contact_id AS uuid)")
             values["contact_id"] = contact_id
+            
+        if type and type != "ALL":
+            conditions.append("t.type = :type")
+            values["type"] = type
+            
+        if date_from:
+            conditions.append("DATE(t.transaction_date) >= :date_from")
+            values["date_from"] = date_from
+            
+        if date_to:
+            conditions.append("DATE(t.transaction_date) <= :date_to")
+            values["date_to"] = date_to
+            
+        if search:
+            conditions.append("(t.invoice_number ILIKE :search OR c.name ILIKE :search)")
+            values["search"] = f"%{search}%"
             
         where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
         
@@ -361,6 +383,136 @@ async def get_transactions(limit: int = 20, offset: int = 0, contact_id: str = N
         traceback.print_exc()
         return []
 
+# --- ENDPOINT GET TRANSACTION STATS ---
+@app.get("/api/v1/transactions/stats", response_model=TransactionStats)
+async def get_transaction_stats(
+    contact_id: str = None,
+    type: str = None,
+    date_from: str = None,
+    date_to: str = None,
+    search: str = None
+):
+    """
+    Get statistics for transactions (count and sums).
+    """
+    try:
+        base_query = """
+            SELECT 
+                COUNT(*) as total_count,
+                SUM(CASE WHEN t.type = 'IN' THEN t.total_amount ELSE 0 END) as total_amount_in,
+                SUM(CASE WHEN t.type = 'OUT' THEN t.total_amount ELSE 0 END) as total_amount_out
+            FROM transactions t
+            LEFT JOIN contacts c ON t.contact_id = c.id
+        """
+        
+        conditions = []
+        values = {}
+        
+        if contact_id:
+            conditions.append("t.contact_id = CAST(:contact_id AS uuid)")
+            values["contact_id"] = contact_id
+            
+        if type and type != "ALL":
+            conditions.append("t.type = :type")
+            values["type"] = type
+            
+        if date_from:
+            conditions.append("DATE(t.transaction_date) >= :date_from")
+            values["date_from"] = date_from
+            
+        if date_to:
+            conditions.append("DATE(t.transaction_date) <= :date_to")
+            values["date_to"] = date_to
+            
+        if search:
+            conditions.append("(t.invoice_number ILIKE :search OR c.name ILIKE :search)")
+            values["search"] = f"%{search}%"
+            
+        where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+        
+        query = f"{base_query}{where_clause}"
+        
+        row = await database.fetch_one(query=query, values=values)
+        
+        return TransactionStats(
+            total_count=row["total_count"] or 0,
+            total_amount_in=float(row["total_amount_in"] or 0),
+            total_amount_out=float(row["total_amount_out"] or 0)
+        )
+    except Exception as e:
+        print(f"[GET TRANSACTION STATS] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return TransactionStats(total_count=0, total_amount_in=0, total_amount_out=0)
+
+# --- ENDPOINT GET FINANCIAL PROFIT & LOSS ---
+@app.get("/api/v1/financial/profit-loss", response_model=FinancialProfitLoss)
+async def get_profit_loss(date_from: str = None, date_to: str = None):
+    """
+    Get Profit & Loss (Laba Rugi) statement for a period.
+    """
+    try:
+        # Pendapatan (Revenue)
+        revenue_query = """
+            SELECT SUM(total_amount) as total
+            FROM transactions
+            WHERE type = 'OUT'
+        """
+        
+        # HPP (Cost of Goods Sold)
+        cogs_query = """
+            SELECT COALESCE(SUM(ti.qty * p.average_cost), 0) as total
+            FROM transaction_items ti
+            JOIN transactions t ON ti.transaction_id = t.id
+            JOIN products p ON ti.product_id = p.id
+            WHERE t.type = 'OUT'
+        """
+        
+        conditions = []
+        values = {}
+        
+        if date_from:
+            conditions.append("DATE(t.transaction_date) >= :date_from")
+            values["date_from"] = date_from
+        if date_to:
+            conditions.append("DATE(t.transaction_date) <= :date_to")
+            values["date_to"] = date_to
+            
+        where_clause = " AND " + " AND ".join(conditions) if conditions else ""
+        
+        if date_from or date_to:
+            revenue_query += where_clause
+            cogs_query += where_clause
+            
+        rev_row = await database.fetch_one(query=revenue_query, values=values)
+        cogs_row = await database.fetch_one(query=cogs_query, values=values)
+        
+        revenue = float(rev_row["total"] or 0)
+        cogs = float(cogs_row["total"] or 0)
+        
+        operational_expenses = 0 
+        
+        gross_profit = revenue - cogs
+        net_profit = gross_profit - operational_expenses
+        
+        return FinancialProfitLoss(
+            revenue=revenue,
+            cogs=cogs,
+            gross_profit=gross_profit,
+            operational_expenses=operational_expenses,
+            net_profit=net_profit,
+            date_from=date_from,
+            date_to=date_to
+        )
+    except Exception as e:
+        print(f"[GET PROFIT LOSS] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return FinancialProfitLoss(
+            revenue=0, cogs=0, gross_profit=0, 
+            operational_expenses=0, net_profit=0,
+            date_from=date_from, date_to=date_to
+        )
 
 # --- ENDPOINT GET TRANSACTION DETAIL ---
 @app.get("/api/v1/transactions/{transaction_id}", response_model=TransactionDetailResponse)
@@ -430,6 +582,38 @@ async def get_transaction_detail(transaction_id: str):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- ENDPOINT GET CONTACT SUMMARY ---
+@app.get("/api/v1/contacts/summary", response_model=ContactSummary)
+async def get_contact_summary():
+    """
+    Get total count of customers and suppliers.
+    """
+    try:
+        query = """
+            SELECT type, COUNT(*) as count
+            FROM contacts
+            GROUP BY type
+        """
+        rows = await database.fetch_all(query=query)
+        
+        total_customers = 0
+        total_suppliers = 0
+        
+        for row in rows:
+            if row["type"] == "CUSTOMER":
+                total_customers = row["count"]
+            elif row["type"] == "SUPPLIER":
+                total_suppliers = row["count"]
+                
+        return ContactSummary(
+            total_customers=total_customers,
+            total_suppliers=total_suppliers
+        )
+    except Exception as e:
+        print(f"[GET CONTACT SUMMARY] Error: {e}")
+        return ContactSummary(total_customers=0, total_suppliers=0)
 
 
 # --- ENDPOINT GET CONTACTS LIST ---
@@ -680,6 +864,78 @@ async def get_products(status: str = "all"):
         traceback.print_exc()
         return []
 
+# --- ENDPOINT GET PRODUCT STATS ---
+@app.get("/api/v1/products/stats", response_model=ProductStats)
+async def get_product_stats():
+    """
+    Get total count of products based on stock status.
+    """
+    try:
+        query = """
+            SELECT 
+                COUNT(*) as total,
+                COUNT(CASE WHEN current_stock > 0 AND current_stock <= 5 THEN 1 END) as low_stock,
+                COUNT(CASE WHEN current_stock <= 0 THEN 1 END) as out_of_stock
+            FROM products
+        """
+        row = await database.fetch_one(query=query)
+        
+        return ProductStats(
+            total=row["total"] or 0,
+            low_stock=row["low_stock"] or 0,
+            out_of_stock=row["out_of_stock"] or 0
+        )
+    except Exception as e:
+        print(f"[GET PRODUCT STATS] Error: {e}")
+        return ProductStats(total=0, low_stock=0, out_of_stock=0)
+
+
+# --- ENDPOINT CREATE PRODUCT ---
+@app.post("/api/v1/products", response_model=ProductDetailResponse)
+async def create_product(data: ProductCreateInput):
+    """
+    Create a new product.
+    """
+    try:
+        query = """
+            INSERT INTO products (name, sku, current_stock, base_unit, category, variant, latest_selling_price)
+            VALUES (:name, :sku, 0, :base_unit, :category, :variant, :latest_selling_price)
+            RETURNING id, name, sku, current_stock, base_unit, latest_selling_price, variant, category, average_cost, created_at, updated_at
+        """
+        values = {
+            "name": data.name,
+            "sku": data.sku,
+            "base_unit": data.base_unit or "pcs",
+            "category": data.category,
+            "variant": data.variant,
+            "latest_selling_price": data.latest_selling_price or 0
+        }
+        
+        row = await database.fetch_one(query=query, values=values)
+        
+        return ProductDetailResponse(
+            id=str(row["id"]),
+            name=row["name"],
+            sku=row["sku"],
+            stock=float(row["current_stock"] or 0),
+            unit=row["base_unit"],
+            price=float(row["latest_selling_price"] or 0),
+            initial=row["name"][:2].upper() if len(row["name"]) >= 2 else row["name"][:1].upper(),
+            category=row["category"],
+            variant=row["variant"],
+            average_cost=float(row["average_cost"] or 0),
+            cost_per_pcs=None,
+            needs_recalculation=False,
+            created_at=str(row["created_at"]) if row["created_at"] else None,
+            updated_at=str(row["updated_at"]) if row["updated_at"] else None
+        )
+    except Exception as e:
+        print(f"[CREATE PRODUCT] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # --- ENDPOINT GET PRODUCT DETAIL ---
 @app.get("/api/v1/products/{product_id}", response_model=ProductDetailResponse)
 async def get_product_detail(product_id: str):
@@ -736,6 +992,54 @@ async def get_product_detail(product_id: str):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- ENDPOINT GET INVENTORY LEDGER ---
+@app.get("/api/v1/inventory/ledger")
+async def get_inventory_ledger(limit: int = 50, offset: int = 0):
+    """
+    Get paginated stock ledger for all products.
+    """
+    try:
+        query = """
+            SELECT 
+                sl.id,
+                sl.date,
+                sl.type,
+                sl.qty_change,
+                sl.qty_balance,
+                p.name as product_name,
+                p.sku as product_sku,
+                p.base_unit as product_unit,
+                t.invoice_number,
+                c.name as contact_name
+            FROM stock_ledger sl
+            JOIN products p ON sl.product_id = p.id
+            LEFT JOIN transactions t ON sl.transaction_id = t.id
+            LEFT JOIN contacts c ON t.contact_id = c.id
+            ORDER BY sl.date DESC, sl.created_at DESC
+            LIMIT :limit OFFSET :offset
+        """
+        rows = await database.fetch_all(query=query, values={"limit": limit, "offset": offset})
+        
+        return [
+            {
+                "id": str(row["id"]),
+                "date": str(row["date"]),
+                "type": row["type"],
+                "qty_change": float(row["qty_change"]),
+                "qty_balance": float(row["qty_balance"]) if row["qty_balance"] is not None else 0,
+                "product_name": row["product_name"],
+                "product_sku": row["product_sku"],
+                "product_unit": row["product_unit"],
+                "invoice_number": row["invoice_number"],
+                "contact_name": row["contact_name"]
+            }
+            for row in rows
+        ]
+    except Exception as e:
+        print(f"[GET INVENTORY LEDGER] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 # --- ENDPOINT UPDATE PRODUCT ---
 @app.put("/api/v1/products/{product_id}", response_model=ProductDetailResponse)
@@ -1013,3 +1317,133 @@ async def recalculate_product_cost(product_id: str):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- ENDPOINT DASHBOARD SUMMARY ---
+@app.get("/api/v1/dashboard/summary")
+async def get_dashboard_summary():
+    """
+    Get dashboard summary: total sales/purchase this month,
+    estimated profit today, transaction count today.
+    """
+    try:
+        # Monthly totals by type
+        monthly_query = """
+            SELECT
+                type,
+                COUNT(*) as count,
+                COALESCE(SUM(total_amount), 0) as total
+            FROM transactions
+            WHERE DATE_TRUNC('month', transaction_date) = DATE_TRUNC('month', NOW())
+            GROUP BY type
+        """
+        monthly_rows = await database.fetch_all(query=monthly_query)
+
+        total_sales_month = 0
+        total_purchase_month = 0
+        sales_count_month = 0
+        purchase_count_month = 0
+
+        for row in monthly_rows:
+            t = row["type"]
+            if t == "SALE" or t == "OUT":
+                total_sales_month += float(row["total"] or 0)
+                sales_count_month += int(row["count"] or 0)
+            elif t == "IN" or t == "PROCUREMENT":
+                total_purchase_month += float(row["total"] or 0)
+                purchase_count_month += int(row["count"] or 0)
+
+        # Estimated profit today
+        profit_query = """
+            SELECT
+                COALESCE(SUM(ti.subtotal - (ti.base_qty * ti.cost_price_at_moment)), 0) as estimated_profit
+            FROM transaction_items ti
+            JOIN transactions t ON ti.transaction_id = t.id
+            WHERE (t.type = 'SALE' OR t.type = 'OUT')
+              AND DATE(t.transaction_date) = CURRENT_DATE
+              AND ti.cost_price_at_moment > 0
+        """
+        profit_row = await database.fetch_one(query=profit_query)
+        estimated_profit_today = float(profit_row["estimated_profit"] or 0) if profit_row else 0
+
+        # Transaction count today
+        today_query = """
+            SELECT COUNT(*) as today_count FROM transactions
+            WHERE DATE(transaction_date) = CURRENT_DATE
+        """
+        today_row = await database.fetch_one(query=today_query)
+        transaction_count_today = int(today_row["today_count"] or 0) if today_row else 0
+
+        return {
+            "total_sales_month": total_sales_month,
+            "total_purchase_month": total_purchase_month,
+            "estimated_profit_today": estimated_profit_today,
+            "transaction_count_today": transaction_count_today,
+            "sales_count_month": sales_count_month,
+            "purchase_count_month": purchase_count_month
+        }
+    except Exception as e:
+        print(f"[DASHBOARD SUMMARY] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "total_sales_month": 0,
+            "total_purchase_month": 0,
+            "estimated_profit_today": 0,
+            "transaction_count_today": 0,
+            "sales_count_month": 0,
+            "purchase_count_month": 0
+        }
+
+
+# --- ENDPOINT DASHBOARD CHART (7 DAYS) ---
+@app.get("/api/v1/dashboard/chart")
+async def get_dashboard_chart():
+    """
+    Get 7-day sales vs purchase data for chart.
+    """
+    try:
+        query = """
+            SELECT
+                DATE(transaction_date) as date,
+                type,
+                COALESCE(SUM(total_amount), 0) as total
+            FROM transactions
+            WHERE transaction_date >= NOW() - INTERVAL '7 days'
+            GROUP BY DATE(transaction_date), type
+            ORDER BY date ASC
+        """
+        rows = await database.fetch_all(query=query)
+
+        # Group by date
+        from collections import defaultdict
+        date_map = defaultdict(lambda: {"sales": 0, "purchase": 0})
+
+        for row in rows:
+            d = str(row["date"])
+            t = row["type"]
+            amount = float(row["total"] or 0)
+            if t == "SALE" or t == "OUT":
+                date_map[d]["sales"] += amount
+            elif t == "IN" or t == "PROCUREMENT":
+                date_map[d]["purchase"] += amount
+
+        # Fill in missing dates
+        from datetime import datetime, timedelta
+        result = []
+        today = datetime.now().date()
+        for i in range(6, -1, -1):
+            d = str(today - timedelta(days=i))
+            entry = date_map.get(d, {"sales": 0, "purchase": 0})
+            result.append({
+                "date": d,
+                "sales": entry["sales"],
+                "purchase": entry["purchase"]
+            })
+
+        return result
+    except Exception as e:
+        print(f"[DASHBOARD CHART] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
