@@ -19,7 +19,8 @@ import {
 export default function ProductsPage() {
   const [products, setProducts] = useState<ProductListItem[]>([]);
   const [stats, setStats] = useState<ProductStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadingList, setLoadingList] = useState(true);
+  const [loadingStats, setLoadingStats] = useState(true);
 
   // Filter states
   const [activeTab, setActiveTab] = useState<
@@ -35,39 +36,54 @@ export default function ProductsPage() {
   const [addingStockProduct, setAddingStockProduct] =
     useState<ProductListItem | null>(null);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchList = async () => {
+    setLoadingList(true);
     try {
-      const [productsData, statsData] = await Promise.all([
-        productService.getProducts(activeTab),
-        productService.getStats(),
-      ]);
+      const productsData = await productService.getProducts(activeTab);
       setProducts(productsData);
+    } catch (error) {
+      console.error("Failed to fetch products list:", error);
+    } finally {
+      setLoadingList(false);
+    }
+  };
+
+  const fetchStats = async () => {
+    setLoadingStats(true);
+    try {
+      const statsData = await productService.getStats();
       setStats(statsData);
     } catch (error) {
-      console.error("Failed to fetch products data:", error);
+      console.error("Failed to fetch products stats:", error);
     } finally {
-      setLoading(false);
+      setLoadingStats(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchList();
   }, [activeTab]);
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
 
   const handleAddProduct = async (data: ProductCreateInput) => {
     await productService.createProduct(data);
-    fetchData();
+    fetchList();
+    fetchStats();
   };
 
   const handleEditProduct = async (id: string, data: ProductUpdateInput) => {
     await productService.updateProduct(id, data);
-    fetchData();
+    fetchList();
+    fetchStats();
   };
 
   const handleAddStock = async (id: string, data: ProductStockAddInput) => {
     await productService.addStock(id, data);
-    fetchData();
+    fetchList();
+    fetchStats();
   };
 
   // Filter products by search query on the client side
@@ -86,32 +102,32 @@ export default function ProductsPage() {
       {/* Header & Stats Row */}
       <div className="flex flex-col xl:flex-row gap-6">
         <div className="xl:w-1/3 flex flex-col justify-end pb-2">
-          <h1 className="text-2xl font-bold text-app-text mb-2">
+          <h1 className="text-2xl font-bold text-app-text dark:text-white mb-2">
             Manajemen Produk
           </h1>
-          <p className="text-sm text-app-muted">
+          <p className="text-sm text-app-muted dark:text-gray-400">
             Kelola daftar produk, harga, dan pantau ketersediaan stok.
           </p>
         </div>
         <div className="xl:w-2/3">
-          <ProductStatsCards stats={stats} loading={loading} />
+          <ProductStatsCards stats={stats} loading={loadingStats} />
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex flex-col flex-1 bg-white/50 rounded-3xl p-6 shadow-sm border border-gray-100 min-h-[500px]">
+      <div className="flex flex-col flex-1 bg-white/50 dark:bg-app-surface rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-white/5 min-h-[500px]">
         {/* Toolbar: Tabs & Search */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           {/* Tabs */}
-          <div className="flex p-1 bg-gray-100 rounded-xl overflow-x-auto w-full md:w-auto">
+          <div className="flex p-1 bg-gray-100 dark:bg-black/20 rounded-xl overflow-x-auto w-full md:w-auto">
             {(["all", "low_stock", "out_of_stock"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`px-6 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
                   activeTab === tab
-                    ? "bg-white text-app-text shadow-sm"
-                    : "text-gray-500 hover:text-app-text"
+                    ? "bg-white dark:bg-app-surface text-app-text dark:text-white shadow-sm"
+                    : "text-gray-500 hover:text-app-text dark:text-gray-400 dark:hover:text-white"
                 }`}
               >
                 {tab === "all"
@@ -134,13 +150,13 @@ export default function ProductsPage() {
                 placeholder="Cari nama atau SKU..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
               />
             </div>
 
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="px-4 py-2.5 bg-app-text text-white rounded-xl text-sm font-medium hover:bg-black transition-colors flex items-center gap-2 drop-shadow-sm whitespace-nowrap"
+              className="px-4 py-2.5 bg-app-text text-white dark:bg-blue-600 dark:hover:bg-blue-700 rounded-xl text-sm font-medium hover:bg-black transition-colors flex items-center gap-2 drop-shadow-sm whitespace-nowrap"
             >
               <Plus size={16} />
               <span className="hidden sm:inline">Tambah Produk</span>
@@ -151,7 +167,7 @@ export default function ProductsPage() {
         {/* Table Area (Flex-1 allows it to take remaining height) */}
         <ProductTable
           products={filteredProducts}
-          loading={loading}
+          loading={loadingList}
           onEdit={(product) => setEditingProduct(product)}
           onAddStock={(product) => setAddingStockProduct(product)}
         />

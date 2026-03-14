@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { MoreHorizontal } from "lucide-react";
 import { dashboardService } from "../../../services/dashboard.service";
 import { TransactionListItem } from "../../../types/dashboard";
@@ -129,9 +130,12 @@ export function TransactionListTable() {
         </table>
       </div>
       <div className="mt-auto pt-4 border-t border-gray-100 dark:border-neutral-800">
-        <button className="w-full py-2 text-sm font-medium text-app-text border border-gray-200 dark:border-neutral-800 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800/50 transition-colors">
+        <Link
+          href="/transaction"
+          className="flex items-center justify-center w-full py-2 text-sm font-medium text-app-text border border-gray-200 dark:border-neutral-800 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800/50 transition-colors"
+        >
           Lihat Semua Transaksi
-        </button>
+        </Link>
       </div>
     </div>
   );

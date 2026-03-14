@@ -12,9 +12,7 @@ export default function DashboardLayout({
         {/* Main Content Card mimicking the design card */}
         <div className="bg-app-surface flex-1 rounded-[32px] shadow-sm flex flex-col overflow-hidden relative border border-[#f3eee4] dark:border-neutral-800">
           <Header />
-          <main className="flex-1 p-8 overflow-y-auto bg-app-bg">
-            {children}
-          </main>
+          <main className="flex-1 p-8 overflow-y-auto">{children}</main>
         </div>
       </div>
     </div>

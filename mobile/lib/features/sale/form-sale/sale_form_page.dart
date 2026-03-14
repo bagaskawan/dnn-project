@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../../core/constants/colors.dart';
 import '../../../core/services/api_service.dart';
 
@@ -11,26 +12,96 @@ class SaleFormPage extends StatefulWidget {
 }
 
 class _SaleFormPageState extends State<SaleFormPage> {
-  String? _selectedCustomer;
   final List<Map<String, dynamic>> _items = [];
   final ApiService _apiService = ApiService();
 
-  // Sample customer data (Replace with API if needed later)
-  final List<String> _customers = [
-    'Toko Makmur',
-    'Warung Berkah',
-    'Kedai Sejahtera',
-    'Kios Sentosa',
-    'Pelanggan Umum',
-  ];
+  // Customer autocomplete state
+  final _customerNameController = TextEditingController();
+  final _customerPhoneController = TextEditingController();
+  final FocusNode _customerFocusNode = FocusNode();
+  List<ContactItem> _allCustomers = [];
+  List<ContactItem> _filteredCustomers = [];
+  ContactItem? _selectedCustomerContact;
+  bool _isNewCustomer = false;
+  bool _showSuggestions = false;
 
   double get _total =>
       _items.fold(0, (sum, item) => sum + (item['price'] * item['quantity']));
 
+  @override
+  void initState() {
+    super.initState();
+    _fetchCustomers();
+    _customerFocusNode.addListener(() {
+      if (!_customerFocusNode.hasFocus) {
+        // Delay to allow tap on suggestion item
+        Future.delayed(const Duration(milliseconds: 200), () {
+          if (mounted) setState(() => _showSuggestions = false);
+        });
+      }
+    });
+  }
+
+  Future<void> _fetchCustomers() async {
+    final customers = await _apiService.getContacts(type: 'CUSTOMER');
+    if (mounted) {
+      setState(() {
+        _allCustomers = customers;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _customerNameController.dispose();
+    _customerPhoneController.dispose();
+    _customerFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _filterCustomers(String query) {
+    setState(() {
+      if (query.isEmpty) {
+        _filteredCustomers = [];
+        _showSuggestions = false;
+        _isNewCustomer = false;
+        _selectedCustomerContact = null;
+      } else {
+        _filteredCustomers = _allCustomers
+            .where((c) => c.name.toLowerCase().contains(query.toLowerCase()))
+            .toList();
+        _showSuggestions = true;
+        // If no exact match found, it's a new customer
+        final exactMatch = _allCustomers.any(
+          (c) => c.name.toLowerCase() == query.toLowerCase(),
+        );
+        if (!exactMatch) {
+          _isNewCustomer = true;
+          _selectedCustomerContact = null;
+        }
+      }
+    });
+  }
+
+  void _onCustomerSelected(ContactItem customer) {
+    setState(() {
+      _customerNameController.text = customer.name;
+      _selectedCustomerContact = customer;
+      _isNewCustomer = false;
+      _showSuggestions = false;
+      _customerPhoneController.text = customer.phone ?? '';
+    });
+    _customerFocusNode.unfocus();
+  }
+
   Future<void> _showProductSearch() async {
+    final existingIds = _items.map((e) => e['id'].toString()).toList();
     final result = await showSearch(
       context: context,
-      delegate: ProductSearchDelegate(apiService: _apiService),
+      delegate: ProductSearchDelegate(
+        apiService: _apiService,
+        existingIds: existingIds,
+      ),
     );
 
     if (result != null) {
@@ -45,7 +116,7 @@ class _SaleFormPageState extends State<SaleFormPage> {
         } else {
           _items.add({
             'id': result['id'],
-            'name': result['display_name'] ?? result['name'] ?? 'Produk',
+            'name': result['name'] ?? 'Produk',
             'stock':
                 result['stock'] ??
                 0, // Need to implement get product detail to get real stock if search doesn't return it
@@ -70,7 +141,7 @@ class _SaleFormPageState extends State<SaleFormPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -96,24 +167,36 @@ class _SaleFormPageState extends State<SaleFormPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildCustomerSelector(),
+                  _buildCustomerInput(),
                   const SizedBox(height: 24),
                   if (_items.isEmpty)
-                    Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 40),
-                        child: Text(
-                          "Belum ada barang dipilih",
-                          style: GoogleFonts.montserrat(color: Colors.grey),
-                        ),
+                    Container(
+                      height: MediaQuery.of(context).size.height * 0.4,
+                      alignment: Alignment.center,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.inventory_2_outlined,
+                            size: 80,
+                            color: Colors.grey.shade500,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            "Belum ada barang dipilih",
+                            style: GoogleFonts.montserrat(
+                              fontSize: 15,
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     )
                   else
                     ..._items.asMap().entries.map((entry) {
                       return _buildDismissibleItem(entry.key, entry.value);
                     }),
-                  const SizedBox(height: 16),
-                  _buildAddItemButton(),
                 ],
               ),
             ),
@@ -121,180 +204,182 @@ class _SaleFormPageState extends State<SaleFormPage> {
           _buildBottomBar(),
         ],
       ),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(
+          bottom: 100,
+        ), // Height of bottom bar + margin
+        child: FloatingActionButton(
+          onPressed: _showProductSearch,
+          backgroundColor: AppColors.primary,
+          elevation: 4,
+          tooltip: 'Tambah Barang',
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
-  Widget _buildCustomerSelector() {
-    return GestureDetector(
-      onTap: _showCustomerModal,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: Row(
+  Widget _buildCustomerInput() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
           children: [
-            Icon(
-              Icons.person_add_outlined,
-              color: Colors.grey.shade400,
-              size: 22,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                _selectedCustomer ?? 'Pilih Pelanggan',
-                style: GoogleFonts.montserrat(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: _selectedCustomer != null
-                      ? AppColors.textPrimary
-                      : Colors.grey.shade400,
-                ),
-              ),
-            ),
-            Icon(Icons.keyboard_arrow_down, color: Colors.grey.shade400),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showCustomerModal() {
-    String searchQuery = '';
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            final filteredCustomers = _customers
-                .where(
-                  (customer) => customer.toLowerCase().contains(
-                    searchQuery.toLowerCase(),
+            Column(
+              children: [
+                // Customer Name Input
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
                   ),
-                )
-                .toList();
-
-            return SafeArea(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: 20,
-                  right: 20,
-                  top: 16,
-                  bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                  child: TextField(
+                    controller: _customerNameController,
+                    focusNode: _customerFocusNode,
+                    onChanged: _filterCustomers,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textPrimary,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Cari atau ketik nama pelanggan baru',
+                      hintStyle: GoogleFonts.montserrat(
+                        fontSize: 14,
+                        color: Colors.grey.shade400,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.person_outline,
+                        color: Colors.grey.shade400,
+                        size: 22,
+                      ),
+                      suffixIcon: _customerNameController.text.isNotEmpty
+                          ? IconButton(
+                              icon: Icon(
+                                Icons.clear,
+                                color: Colors.grey.shade400,
+                                size: 18,
+                              ),
+                              onPressed: () {
+                                _customerNameController.clear();
+                                _filterCustomers('');
+                                _customerFocusNode.requestFocus();
+                              },
+                            )
+                          : null,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                    ),
+                  ),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Pilih Pelanggan',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
+                // Phone Input (always visible)
+                const SizedBox(height: 12),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: TextField(
+                    controller: _customerPhoneController,
+                    keyboardType: TextInputType.phone,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textPrimary,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'No. HP Pelanggan (opsional)',
+                      hintStyle: GoogleFonts.montserrat(
+                        fontSize: 14,
+                        color: Colors.grey.shade400,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.phone_outlined,
+                        color: Colors.grey.shade400,
+                        size: 22,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    // Search Field
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: TextField(
-                        onChanged: (value) {
-                          setModalState(() {
-                            searchQuery = value;
-                          });
-                        },
-                        decoration: InputDecoration(
-                          hintText: 'Cari pelanggan...',
-                          hintStyle: GoogleFonts.montserrat(
-                            fontSize: 14,
-                            color: Colors.grey.shade400,
-                          ),
-                          prefixIcon: Icon(
-                            Icons.search,
-                            color: Colors.grey.shade400,
-                          ),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                        ),
-                        style: GoogleFonts.montserrat(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+                  ),
+                ),
+              ],
+            ),
+            // Suggestions Dropdown (Overlay)
+            if (_showSuggestions && _filteredCustomers.isNotEmpty)
+              Positioned(
+                top: 56, // Height of the search input + small margin
+                left: 0,
+                right: 0,
+                child: Material(
+                  color: Colors.transparent,
+                  elevation: 8,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
                     ),
-                    const SizedBox(height: 12),
-                    // Customer List
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: MediaQuery.of(context).size.height * 0.4,
-                      ),
-                      child: filteredCustomers.isEmpty
-                          ? Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 24),
-                              child: Center(
-                                child: Text(
-                                  'Pelanggan tidak ditemukan',
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      itemCount: _filteredCustomers.length,
+                      separatorBuilder: (_, __) =>
+                          Divider(height: 1, color: Colors.grey.shade100),
+                      itemBuilder: (context, index) {
+                        final customer = _filteredCustomers[index];
+                        return ListTile(
+                          dense: true,
+                          leading: CircleAvatar(
+                            radius: 16,
+                            backgroundColor: AppColors.primary.withOpacity(0.1),
+                            child: Text(
+                              customer.initial,
+                              style: GoogleFonts.montserrat(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                          title: Text(
+                            customer.name,
+                            style: GoogleFonts.montserrat(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          subtitle: customer.phone != null
+                              ? Text(
+                                  customer.phone!,
                                   style: GoogleFonts.montserrat(
-                                    fontSize: 14,
+                                    fontSize: 11,
                                     color: Colors.grey.shade500,
                                   ),
-                                ),
-                              ),
-                            )
-                          : ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: filteredCustomers.length,
-                              itemBuilder: (context, index) {
-                                final customer = filteredCustomers[index];
-                                return ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  leading: CircleAvatar(
-                                    backgroundColor: AppColors.primary
-                                        .withOpacity(0.1),
-                                    child: Text(
-                                      customer[0],
-                                      style: GoogleFonts.montserrat(
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.primary,
-                                      ),
-                                    ),
-                                  ),
-                                  title: Text(
-                                    customer,
-                                    style: GoogleFonts.montserrat(
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedCustomer = customer;
-                                    });
-                                    Navigator.pop(context);
-                                  },
-                                );
-                              },
-                            ),
+                                )
+                              : null,
+                          onTap: () => _onCustomerSelected(customer),
+                        );
+                      },
                     ),
-                  ],
+                  ),
                 ),
               ),
-            );
-          },
-        );
-      },
+          ],
+        ),
+      ],
     );
   }
 
@@ -482,45 +567,6 @@ class _SaleFormPageState extends State<SaleFormPage> {
     );
   }
 
-  Widget _buildAddItemButton() {
-    return GestureDetector(
-      onTap: _showProductSearch,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: Colors.grey.shade300,
-            style: BorderStyle.solid,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.add, size: 16, color: AppColors.primary),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              'Tambah Barang',
-              style: GoogleFonts.montserrat(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey.shade600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildBottomBar() {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
@@ -597,7 +643,7 @@ class _SaleFormPageState extends State<SaleFormPage> {
     );
   }
 
-  void _saveForm() {
+  Future<void> _saveForm() async {
     if (_items.isEmpty) {
       ScaffoldMessenger.of(
         context,
@@ -605,18 +651,31 @@ class _SaleFormPageState extends State<SaleFormPage> {
       return;
     }
 
+    final customerName = _customerNameController.text.trim();
+
+    // If new customer with a name, create the contact first
+    if (_isNewCustomer && customerName.isNotEmpty) {
+      final contactData = {
+        'name': customerName,
+        'type': 'CUSTOMER',
+        if (_customerPhoneController.text.trim().isNotEmpty)
+          'phone': _customerPhoneController.text.trim(),
+      };
+      await _apiService.createContact(contactData);
+    }
+
     final itemSummary = _items
         .map((item) => '${item['name']} x${item['quantity']} ${item['unit']}')
         .join(', ');
 
     final saleData = {
-      'customer': _selectedCustomer ?? 'Pelanggan Umum',
+      'customer': customerName.isNotEmpty ? customerName : 'Pelanggan Umum',
       'items': List<Map<String, dynamic>>.from(_items),
       'total': _total,
       'summary': itemSummary,
     };
 
-    Navigator.pop(context, saleData);
+    if (mounted) Navigator.pop(context, saleData);
   }
 
   String _formatNumber(int number) {
@@ -629,8 +688,9 @@ class _SaleFormPageState extends State<SaleFormPage> {
 
 class ProductSearchDelegate extends SearchDelegate<Map<String, dynamic>?> {
   final ApiService apiService;
+  final List<String> existingIds;
 
-  ProductSearchDelegate({required this.apiService});
+  ProductSearchDelegate({required this.apiService, required this.existingIds});
 
   @override
   List<Widget>? buildActions(BuildContext context) {
@@ -664,38 +724,147 @@ class ProductSearchDelegate extends SearchDelegate<Map<String, dynamic>?> {
     return _buildSearchResults();
   }
 
-  Widget _buildSearchResults() {
-    if (query.isEmpty) {
-      return Container();
+  String _formatStock(dynamic stockVal) {
+    if (stockVal == null) return '0';
+    double stock = 0.0;
+    if (stockVal is int) {
+      stock = stockVal.toDouble();
+    } else if (stockVal is double) {
+      stock = stockVal;
+    } else {
+      stock = double.tryParse(stockVal.toString()) ?? 0.0;
     }
 
+    if (stock == stock.toInt()) {
+      return stock.toInt().toString();
+    } else {
+      return stock.toString().replaceAll('.', ',');
+    }
+  }
+
+  String _formatPrice(dynamic priceVal) {
+    if (priceVal == null) return "0";
+    double price = 0.0;
+    if (priceVal is num) {
+      price = priceVal.toDouble();
+    } else {
+      price = double.tryParse(priceVal.toString()) ?? 0.0;
+    }
+
+    return price.toInt().toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (m) => '${m[1]}.',
+    );
+  }
+
+  Widget _buildSearchResults() {
+    // Return all products when query is empty, assuming backend handles empty query by returning default items
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: apiService.searchProducts(query),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return _buildSkeletonLoading();
         }
 
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return const Center(child: Text("Produk tidak ditemukan"));
         }
 
-        final results = snapshot.data!;
+        final results = snapshot.data!
+            .where((product) => !existingIds.contains(product['id']))
+            .toList();
 
-        return ListView.builder(
+        if (results.isEmpty) {
+          return const Center(child: Text("Produk tidak ditemukan"));
+        }
+
+        return ListView.separated(
           itemCount: results.length,
+          separatorBuilder: (context, index) =>
+              Divider(height: 1, color: Colors.grey.shade200),
           itemBuilder: (context, index) {
             final product = results[index];
             return ListTile(
-              title: Text(product['display_name'] ?? product['name']),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 4,
+              ),
+              title: Text(
+                product['name'] ?? 'Produk',
+                style: GoogleFonts.montserrat(fontWeight: FontWeight.w500),
+              ),
               subtitle: Text(
-                "Unit: ${product['unit']} | Kategori: ${product['category'] ?? '-'}",
+                "Stok: ${_formatStock(product['stock'])} ${product['unit'] ?? ''}",
+                style: GoogleFonts.montserrat(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              trailing: Text(
+                "Rp ${_formatPrice(product['latest_selling_price'])}",
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
               ),
               onTap: () {
                 close(context, product);
               },
             );
           },
+        );
+      },
+    );
+  }
+
+  Widget _buildSkeletonLoading() {
+    return ListView.separated(
+      itemCount: 8,
+      separatorBuilder: (context, index) =>
+          Divider(height: 1, color: Colors.grey.shade200),
+      itemBuilder: (context, index) {
+        return ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 4,
+          ),
+          title: Shimmer.fromColors(
+            baseColor: Colors.grey.shade300,
+            highlightColor: Colors.grey.shade100,
+            child: Container(
+              height: 16,
+              width: 150,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          subtitle: Shimmer.fromColors(
+            baseColor: Colors.grey.shade300,
+            highlightColor: Colors.grey.shade100,
+            child: Container(
+              height: 12,
+              width: 80,
+              margin: const EdgeInsets.only(top: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          trailing: Shimmer.fromColors(
+            baseColor: Colors.grey.shade300,
+            highlightColor: Colors.grey.shade100,
+            child: Container(
+              height: 16,
+              width: 60,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
         );
       },
     );

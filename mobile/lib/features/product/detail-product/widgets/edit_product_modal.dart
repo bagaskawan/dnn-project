@@ -177,36 +177,59 @@ class _EditProductModalState extends State<EditProductModal> {
       'current_stock': double.tryParse(_stockController.text) ?? 0,
     };
 
+    // Capture context objects sebelum async
+    final messenger = ScaffoldMessenger.of(context);
+
     final result = await _apiService.updateProduct(
       widget.product['id'],
       updatedData,
     );
 
+    if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (result != null) {
-      if (mounted) {
-        // Return updated data
-        Navigator.pop(context, {
-          ...widget.product,
-          'name': updatedData['name'],
-          'latest_selling_price': updatedData['latest_selling_price'],
-          'average_cost': updatedData['average_cost'],
-          'current_stock': updatedData['current_stock'],
-        });
-      }
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Gagal memperbarui produk',
-              style: GoogleFonts.montserrat(fontSize: 13),
-            ),
-            backgroundColor: Colors.red,
+      // Langsung pop modal dengan mengirim data terbaru ke parent
+      Navigator.pop(context, {
+        ...widget.product,
+        'name': updatedData['name'],
+        'latest_selling_price': updatedData['latest_selling_price'],
+        'average_cost': updatedData['average_cost'],
+        'current_stock': updatedData['current_stock'],
+      });
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Produk berhasil diperbarui',
+            style: GoogleFonts.montserrat(fontSize: 13),
           ),
-        );
-      }
+          behavior: SnackBarBehavior.floating,
+          dismissDirection: DismissDirection.up,
+          margin: EdgeInsets.only(
+            bottom: 90,
+            left: 24,
+            right: 24,
+          ),
+        ),
+      );
+    } else {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Gagal memperbarui produk',
+            style: GoogleFonts.montserrat(fontSize: 13),
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          dismissDirection: DismissDirection.up,
+          margin: EdgeInsets.only(
+            bottom: 90,
+            left: 24,
+            right: 24,
+          ),
+        ),
+      );
     }
   }
 

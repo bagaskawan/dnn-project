@@ -68,15 +68,15 @@ export default function ProductDetailPage() {
         <div className="flex items-center gap-4">
           <Link
             href="/products"
-            className="p-2 text-app-muted hover:text-app-text hover:bg-white rounded-xl transition-colors shrink-0 border border-transparent hover:border-gray-200"
+            className="p-2 text-app-muted dark:text-gray-400 hover:text-app-text dark:hover:text-white hover:bg-white dark:hover:bg-app-surface rounded-xl transition-colors shrink-0 border border-transparent hover:border-gray-200 dark:hover:border-white/10"
           >
             <ArrowLeft size={20} />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-app-text mb-1">
+            <h1 className="text-2xl font-bold text-app-text dark:text-white mb-1">
               Detail Produk
             </h1>
-            <p className="text-sm text-app-muted">
+            <p className="text-sm text-app-muted dark:text-gray-400">
               Informasi lengkap dan riwayat pergerakan stok
             </p>
           </div>
@@ -86,7 +86,7 @@ export default function ProductDetailPage() {
           <button
             onClick={() => setIsEditModalOpen(true)}
             disabled={!product}
-            className="flex-1 sm:flex-none px-4 py-2.5 bg-white text-app-text border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 drop-shadow-sm disabled:opacity-50"
+            className="flex-1 sm:flex-none px-4 py-2.5 bg-white dark:bg-app-surface text-app-text dark:text-gray-100 border border-gray-200 dark:border-white/10 rounded-xl text-sm font-medium hover:bg-gray-50 dark:hover:bg-white/5 transition-colors flex items-center justify-center gap-2 drop-shadow-sm disabled:opacity-50"
           >
             <Edit2 size={16} />
             <span>Edit Info</span>

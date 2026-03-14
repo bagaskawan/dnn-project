@@ -50,7 +50,7 @@ class ApiService {
     ProcurementDraft? currentDraft,
   ) async {
     try {
-      String fileName = imageFile.path.split('/').last;
+      String fileName = imageFile.path.split(RegExp(r'[/\\]')).last;
 
       // Kirim draft sebagai JSON String karena Multipart tidak bisa nested JSON
       String? draftJsonStr;
@@ -69,11 +69,13 @@ class ApiService {
       final response = await _dio.post('/api/v1/parse/image', data: formData);
 
       if (response.statusCode == 200) {
+        print("Image API response: ${response.data}");
         return ProcurementDraft.fromJson(response.data);
       }
       return null;
     } catch (e) {
       print("Error Image API: $e");
+      print("Stack trace: ${StackTrace.current}");
       return null;
     }
   }
@@ -91,8 +93,33 @@ class ApiService {
       }
       return [];
     } catch (e) {
-      print("Error Commit API: $e");
-      rethrow;
+      print("Error Search Products API: $e");
+      return [];
+    }
+  }
+
+  // 3b. Search Contacts (Autocomplete for Supplier)
+  Future<List<ContactItem>> searchContacts(String query, {String? type}) async {
+    try {
+      final queryParams = <String, dynamic>{'q': query};
+      if (type != null) {
+        queryParams['type'] = type;
+      }
+
+      final response = await _dio.get(
+        '/api/v1/contacts/search',
+        queryParameters: queryParams,
+      );
+
+      if (response.statusCode == 200) {
+        return (response.data as List)
+            .map((e) => ContactItem.fromJson(e))
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      print("Error Search Contacts API: $e");
+      return [];
     }
   }
 
@@ -223,6 +250,22 @@ class ApiService {
     } catch (e) {
       print("Error Get Transactions API: $e");
       return [];
+    }
+  }
+
+  // --- Product Management (Detailed) ---
+
+  // 6. Delete Product
+  Future<bool> deleteProduct(String productId) async {
+    try {
+      final response = await _dio.delete('/api/v1/products/$productId');
+      if (response.statusCode == 200) {
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print("Error Delete Product API: $e");
+      return false;
     }
   }
 

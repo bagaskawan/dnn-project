@@ -12,26 +12,26 @@ interface ProductTableProps {
 
 function SkeletonRow() {
   return (
-    <tr className="border-b border-gray-50">
+    <tr className="border-b border-gray-50 dark:border-white/5">
       <td className="px-4 py-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gray-100 animate-pulse"></div>
+          <div className="w-10 h-10 rounded-xl bg-gray-200 dark:bg-white/10 animate-pulse"></div>
           <div>
-            <div className="h-5 bg-gray-100 rounded w-32 animate-pulse mb-1"></div>
-            <div className="h-3 bg-gray-100 rounded w-20 animate-pulse"></div>
+            <div className="h-5 bg-gray-200 dark:bg-white/10 rounded w-32 animate-pulse mb-1"></div>
+            <div className="h-3 bg-gray-200 dark:bg-white/10 rounded w-20 animate-pulse"></div>
           </div>
         </div>
       </td>
       <td className="px-4 py-4">
-        <div className="h-4 bg-gray-100 rounded w-16 animate-pulse"></div>
+        <div className="h-4 bg-gray-200 dark:bg-white/10 rounded w-16 animate-pulse"></div>
       </td>
       <td className="px-4 py-4">
-        <div className="h-5 bg-gray-100 rounded w-24 animate-pulse"></div>
+        <div className="h-5 bg-gray-200 dark:bg-white/10 rounded w-24 animate-pulse"></div>
       </td>
       <td className="px-4 py-4">
         <div className="flex gap-2 justify-end">
-          <div className="h-8 w-8 bg-gray-100 rounded-lg animate-pulse"></div>
-          <div className="h-8 w-8 bg-gray-100 rounded-lg animate-pulse"></div>
+          <div className="h-8 w-8 bg-gray-200 dark:bg-white/10 rounded-lg animate-pulse"></div>
+          <div className="h-8 w-8 bg-gray-200 dark:bg-white/10 rounded-lg animate-pulse"></div>
         </div>
       </td>
     </tr>
@@ -45,10 +45,10 @@ export function ProductTable({
   onAddStock,
 }: ProductTableProps) {
   return (
-    <div className="bg-white/50 rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col gap-4 h-full flex-1">
+    <div className="bg-white/50 dark:bg-app-surface/50 rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-white/5 flex flex-col gap-4 h-full flex-1">
       <div className="overflow-x-auto flex-1">
-        <table className="w-full text-sm text-left text-app-text">
-          <thead className="text-xs text-app-muted uppercase bg-gray-50/50 rounded-lg">
+        <table className="w-full text-sm text-left text-app-text dark:text-gray-300">
+          <thead className="text-xs text-app-muted dark:text-gray-400 uppercase bg-gray-50/50 dark:bg-black/20 rounded-lg">
             <tr>
               <th scope="col" className="px-4 py-3 rounded-l-lg">
                 Info Produk
@@ -83,17 +83,17 @@ export function ProductTable({
               products.map((product) => (
                 <tr
                   key={product.id}
-                  className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors group"
+                  className="border-b border-gray-50 dark:border-white/5 last:border-0 hover:bg-gray-50/30 dark:hover:bg-white/5 transition-colors group"
                 >
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-3 w-full max-w-[300px]">
-                      <div className="w-10 h-10 rounded-xl bg-[#F0F4FF] text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
+                      <div className="w-10 h-10 rounded-xl bg-[#F0F4FF] dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-sm shrink-0">
                         {product.initial}
                       </div>
                       <div className="min-w-0 flex-1">
                         <Link
                           href={`/products/${product.id}`}
-                          className="font-semibold text-app-text hover:text-blue-600 transition-colors block truncate"
+                          className="font-semibold text-app-text dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors block truncate"
                         >
                           {product.name}{" "}
                           {product.variant ? `(${product.variant})` : ""}
@@ -103,7 +103,7 @@ export function ProductTable({
                             <span className="truncate">SKU: {product.sku}</span>
                           )}
                           {product.category && (
-                            <span className="px-2 py-0.5 bg-gray-100 rounded-md text-[10px] uppercase tracking-wider shrink-0">
+                            <span className="px-2 py-0.5 bg-gray-100 dark:bg-white/10 dark:text-gray-300 rounded-md text-[10px] uppercase tracking-wider shrink-0">
                               {product.category}
                             </span>
                           )}
@@ -113,7 +113,7 @@ export function ProductTable({
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-app-text">
+                      <span className="font-medium text-app-text dark:text-white">
                         {formatNumber(product.stock)} {product.unit}
                       </span>
                       {product.stock <= 0 ? (
@@ -135,7 +135,7 @@ export function ProductTable({
                     </div>
                   </td>
                   <td className="px-4 py-4">
-                    <div className="font-semibold text-app-text">
+                    <div className="font-semibold text-app-text dark:text-white">
                       {formatRupiah(product.price)}
                     </div>
                   </td>
@@ -143,14 +143,14 @@ export function ProductTable({
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => onAddStock(product)}
-                        className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100"
+                        className="p-2 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-colors border border-transparent hover:border-blue-100 dark:hover:border-blue-500/20"
                         title="Tambah Stok"
                       >
                         <PlusCircle size={16} />
                       </button>
                       <button
                         onClick={() => onEdit(product)}
-                        className="p-2 text-app-muted hover:text-app-text hover:bg-white rounded-lg transition-colors border border-transparent hover:border-gray-200"
+                        className="p-2 text-app-muted dark:text-gray-400 hover:text-app-text dark:hover:text-white hover:bg-white dark:hover:bg-white/5 rounded-lg transition-colors border border-transparent hover:border-gray-200 dark:hover:border-white/10"
                         title="Edit Produk"
                       >
                         <Edit2 size={16} />

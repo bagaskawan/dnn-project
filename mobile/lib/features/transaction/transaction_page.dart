@@ -27,9 +27,14 @@ class _TransactionContentState extends State<TransactionContent>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
-  int _selectedFilter = 0; // 0: Hari Ini, 1: 7 Hari, 2: 30 Hari
+  int _selectedFilter = 3; // 0: Hari Ini, 1: 7 Hari, 2: 30 Hari, 3: Semua
 
-  final List<String> _filterOptions = ['Hari Ini', '7 Hari', '30 Hari'];
+  final List<String> _filterOptions = [
+    'Hari Ini',
+    '7 Hari',
+    '30 Hari',
+    'Semua',
+  ];
 
   // Transactions loaded from API
   final ApiService _apiService = ApiService();
@@ -101,6 +106,31 @@ class _TransactionContentState extends State<TransactionContent>
     } else if (_tabController.index == 2) {
       filtered = filtered
           .where((t) => t.type == TransactionType.penjualan)
+          .toList();
+    }
+
+    // Filter by time period (0: Hari Ini, 1: 7 Hari, 2: 30 Hari, 3: Semua)
+    if (_selectedFilter != 3) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      DateTime startDate;
+
+      switch (_selectedFilter) {
+        case 0: // Hari Ini
+          startDate = today;
+          break;
+        case 1: // 7 Hari
+          startDate = today.subtract(const Duration(days: 7));
+          break;
+        case 2: // 30 Hari
+          startDate = today.subtract(const Duration(days: 30));
+          break;
+        default:
+          startDate = today;
+      }
+
+      filtered = filtered
+          .where((t) => !t.created_at.isBefore(startDate))
           .toList();
     }
 

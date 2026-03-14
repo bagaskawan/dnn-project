@@ -492,15 +492,11 @@ class _SalePageState extends State<SalePage> {
   }
 
   Widget _buildInputArea() {
-    // ... Reuse existing code ...
-    // For brevity, I will copy the previous implementation logic but ensure controller binding
-    // Since I am replacing the whole file content, I must rewrite it fully.
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          const SizedBox(width: 8),
           Expanded(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -532,23 +528,6 @@ class _SalePageState extends State<SalePage> {
             ),
           ),
           const SizedBox(width: 12),
-          Container(
-            width: 48,
-            height: 48,
-            decoration: const BoxDecoration(
-              color: AppColors.primary,
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              icon: const Icon(
-                Icons.description_outlined,
-                color: Colors.white,
-                size: 20,
-              ),
-              onPressed: _openSaleForm,
-            ),
-          ),
-          const SizedBox(width: 8),
           Container(
             width: 48,
             height: 48,

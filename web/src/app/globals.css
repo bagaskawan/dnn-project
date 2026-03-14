@@ -31,7 +31,7 @@
 
   .dark {
     --app-bg: #252527; /* Muted, noticeably darker background for layout */
-    --app-surface: #26262b; /* User-requested color from inspect element */
+    --app-surface: #151414; /* User-requested color from inspect element */
     --app-text: #f3f4f6; /* Off-white text */
     --app-muted: #9ca3af; /* Muted text */
 

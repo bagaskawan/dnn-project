@@ -871,10 +871,167 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 _showAddStockModal(context);
               },
             ),
+            const Divider(),
+            ListTile(
+              title: Text(
+                'Hapus Produk',
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.red.shade600,
+                ),
+              ),
+              subtitle: Text(
+                'Hapus produk beserta seluruh riwayatnya secara permanen',
+                style: GoogleFonts.montserrat(fontSize: 12, color: Colors.red.shade400),
+              ),
+              leading: Icon(Icons.delete_outline, color: Colors.red.shade600),
+              onTap: () {
+                Navigator.pop(modalContext);
+                _confirmDeleteProduct();
+              },
+            ),
           ],
         ),
       ),
     );
+  }
+
+  void _confirmDeleteProduct() async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    // Tunggu dialog hingga benar-benar tertutup (termasuk animasinya)
+    final result = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        bool isDeleting = false;
+        return StatefulBuilder(
+          builder: (innerContext, setStateDialog) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Text(
+                'Hapus Produk?',
+                style: GoogleFonts.montserrat(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              content: Text(
+                'Apakah Anda yakin ingin menghapus produk ini? Semua data riwayat transaksi dan ledger yang terkait dengan produk ini ikut dihapus secara permanen.',
+                style: GoogleFonts.montserrat(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isDeleting ? null : () => Navigator.pop(dialogContext),
+                  child: Text(
+                    'Batal',
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: isDeleting
+                      ? null
+                      : () async {
+                          setStateDialog(() => isDeleting = true);
+                          
+                          // Capture navigator dialog sebelum async
+                          final dialogNav = Navigator.of(dialogContext);
+                          
+                          try {
+                            final success = await _apiService.deleteProduct(_product['id']);
+                            
+                            if (success) {
+                              // Tutup dialog, lempar kode 'deleted'
+                              dialogNav.pop('deleted');
+                            } else {
+                              if (innerContext.mounted) {
+                                setStateDialog(() => isDeleting = false);
+                              }
+                              scaffoldMessenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Gagal menghapus produk',
+                                    style: GoogleFonts.montserrat(fontSize: 13),
+                                  ),
+                                  behavior: SnackBarBehavior.floating,
+                                  dismissDirection: DismissDirection.up,
+                                  margin: EdgeInsets.only(
+                                    bottom: 90,
+                                    left: 24,
+                                    right: 24,
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            // Pastikan dialog tetap bisa ditutup jika terjadi error tak terduga
+                            dialogNav.pop();
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade600,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: isDeleting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          'Hapus',
+                          style: GoogleFonts.montserrat(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    // Mengeksekusi navigasi parent SETELAH dialog seutuhnya ditutup dan aman dari Hero animation bentrok.
+    if (result == 'deleted') {
+      if (!mounted) return;
+
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Produk berhasil dihapus',
+            style: GoogleFonts.montserrat(fontSize: 13),
+          ),
+          behavior: SnackBarBehavior.floating,
+          dismissDirection: DismissDirection.up,
+          margin: EdgeInsets.only(
+            bottom: 90,
+            left: 24,
+            right: 24,
+          ),
+          backgroundColor: AppColors.boxSecondBack,
+        ),
+      );
+
+      // Tutup halaman Detail Produk
+      Navigator.pop(context, true); 
+    }
   }
 
   void _showAddStockModal(BuildContext context) async {

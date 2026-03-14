@@ -32,37 +32,37 @@ export default function InventoryPage() {
       {/* Header Row */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-app-text mb-1">
+          <h1 className="text-2xl font-bold text-app-text dark:text-white mb-1">
             Inventaris & Stok
           </h1>
-          <p className="text-sm text-app-muted">
+          <p className="text-sm text-app-muted dark:text-gray-400">
             Pantau pergerakan stok, barang masuk, dan barang keluar secara
             real-time.
           </p>
         </div>
 
         <div className="flex gap-3 w-full sm:w-auto">
-          <button className="flex-1 sm:flex-none px-5 py-2.5 bg-white text-app-text border border-gray-200 rounded-xl text-sm font-semibold shadow-sm hover:bg-gray-50 transition-colors">
+          <button className="flex-1 sm:flex-none px-5 py-2.5 bg-white dark:bg-app-surface text-app-text dark:text-gray-100 border border-gray-200 dark:border-white/10 rounded-xl text-sm font-semibold shadow-sm hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
             Cetak Laporan
           </button>
-          <button className="flex-1 sm:flex-none px-5 py-2.5 bg-app-accent text-white rounded-xl text-sm font-semibold shadow-sm shadow-orange-500/20 hover:bg-orange-600 transition-colors">
+          <button className="flex-1 sm:flex-none px-5 py-2.5 bg-orange-600 text-white rounded-xl text-sm font-semibold shadow-sm transition-colors">
             Stok Opname
           </button>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex flex-col flex-1 bg-white/50 rounded-3xl p-6 shadow-sm border border-gray-100 min-h-[500px]">
+      <div className="flex flex-col flex-1 bg-white/50 dark:bg-app-surface rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-white/5 min-h-[500px]">
         {/* Toolbar */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-          <div className="flex p-1 bg-gray-100 rounded-xl w-full md:w-auto">
-            <button className="flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-medium transition-all bg-white text-app-text shadow-sm">
+          <div className="flex p-1 bg-gray-100 dark:bg-black/20 rounded-xl w-full md:w-auto">
+            <button className="flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-medium transition-all bg-white dark:bg-app-surface text-app-text dark:text-white shadow-sm">
               Semua Mutasi
             </button>
-            <button className="flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-app-text">
+            <button className="flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-app-text dark:text-gray-400 dark:hover:text-white">
               Stok Masuk
             </button>
-            <button className="flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-app-text">
+            <button className="flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-app-text dark:text-gray-400 dark:hover:text-white">
               Stok Keluar
             </button>
           </div>
@@ -75,7 +75,7 @@ export default function InventoryPage() {
             <input
               type="text"
               placeholder="Cari produk atau SKU..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
             />
           </div>
         </div>

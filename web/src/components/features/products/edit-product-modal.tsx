@@ -67,19 +67,19 @@ export function EditProductModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+      <div className="bg-white dark:bg-app-surface rounded-3xl dark:border dark:border-white/5 w-full max-w-lg overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/20">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-orange-100 text-orange-600 rounded-xl">
               <Edit2 size={20} />
             </div>
-            <h2 className="text-lg font-bold text-app-text">
+            <h2 className="text-lg font-bold text-app-text dark:text-white">
               Edit Detail Produk
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+            className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
           >
             <X size={20} />
           </button>
@@ -87,7 +87,7 @@ export function EditProductModal({
 
         <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4">
           <div className="bg-gray-50 rounded-xl p-4 mb-2">
-            <div className="text-sm font-medium text-app-text mb-1">
+            <div className="text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1">
               {product.name} {product.variant ? `(${product.variant})` : ""}
             </div>
             <div className="text-xs text-gray-500">
@@ -97,7 +97,7 @@ export function EditProductModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-app-text mb-1.5">
+            <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
               Nama Produk <span className="text-red-500">*</span>
             </label>
             <input
@@ -114,7 +114,7 @@ export function EditProductModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-app-text mb-1.5">
+              <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
                 Stok Saat Ini
               </label>
               <div className="relative">
@@ -132,7 +132,7 @@ export function EditProductModal({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-app-text mb-1.5">
+              <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
                 Harga Jual
               </label>
               <div className="relative">
@@ -154,11 +154,11 @@ export function EditProductModal({
             </div>
           </div>
 
-          <div className="flex gap-3 justify-end mt-4 pt-4 border-t border-gray-100">
+          <div className="flex gap-3 justify-end mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+              className="px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 rounded-xl transition-colors"
             >
               Batal
             </button>

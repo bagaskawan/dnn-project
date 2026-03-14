@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from app.schemas import ProcurementDraft, ChatInput, CommitTransactionInput, CommitTransactionResponse, TransactionListItem, TransactionDetailResponse, TransactionItemDetail, TransactionStats, FinancialProfitLoss, ContactItem, ContactCreateInput, ContactUpdateInput, ContactStats, ContactSummary, ProductHistoryItem, ProductListItem, ProductDetailResponse, ProductUpdateInput, ProductStockAddInput, ProductStats, ProductCreateInput, SaleDraft, CommitSaleInput
 from typing import List, Optional
 from app.services.ai_service import parse_procurement_text, parse_procurement_image, parse_sale_text
-from app.services.commit_service import commit_transaction_logic, commit_sale_logic, generate_invoice_number
+from app.services.commit_service import commit_transaction_logic, commit_sale_logic, generate_invoice_number, generate_sku, upsert_contact
 
 # Load environment variables dari file .env
 load_dotenv()
@@ -117,7 +117,7 @@ async def search_products(q: str):
     """
     try:
         query = """
-            SELECT id, name, variant, base_unit, category 
+            SELECT id, name, variant, base_unit, category, current_stock, sku, latest_selling_price 
             FROM products 
             WHERE name ILIKE :q OR variant ILIKE :q
             LIMIT 10
@@ -131,6 +131,9 @@ async def search_products(q: str):
                 "variant": row["variant"],
                 "unit": row["base_unit"],
                 "category": row["category"],
+                "stock": float(row["current_stock"] or 0),
+                "sku": row["sku"],
+                "latest_selling_price": float(row["latest_selling_price"] or 0),
                 # Display name for UI
                 "display_name": f"{row['name']} ({row['variant']})" if row["variant"] else row["name"]
             } 
@@ -358,7 +361,7 @@ async def get_transactions(
             
         where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
         
-        query = f"{base_query}{where_clause} ORDER BY t.transaction_date DESC, t.created_at DESC LIMIT :limit OFFSET :offset"
+        query = f"{base_query}{where_clause} ORDER BY t.created_at DESC, t.created_at DESC LIMIT :limit OFFSET :offset"
         
         rows = await database.fetch_all(query=query, values=values)
         
@@ -614,6 +617,48 @@ async def get_contact_summary():
     except Exception as e:
         print(f"[GET CONTACT SUMMARY] Error: {e}")
         return ContactSummary(total_customers=0, total_suppliers=0)
+
+
+# --- ENDPOINT SEARCH CONTACTS (AUTOCOMPLETE) ---
+@app.get("/api/v1/contacts/search", response_model=list[ContactItem])
+async def search_contacts(q: str, type: str = None):
+    """
+    Search contacts by name for autocomplete.
+    Optional type filter: "SUPPLIER" or "CUSTOMER".
+    """
+    try:
+        base_query = """
+            SELECT id, name, type, phone, address, notes, created_at
+            FROM contacts
+            WHERE name ILIKE :q
+        """
+        values = {"q": f"%{q}%"}
+        
+        if type:
+            base_query += " AND type = :type"
+            values["type"] = type.upper()
+        
+        base_query += " ORDER BY name ASC LIMIT 10"
+        
+        rows = await database.fetch_all(query=base_query, values=values)
+        
+        return [
+            ContactItem(
+                id=str(row["id"]),
+                name=row["name"] or "Unknown",
+                type=row["type"] or "CUSTOMER",
+                phone=row["phone"],
+                address=row["address"],
+                notes=row["notes"],
+                created_at=str(row["created_at"]) if row["created_at"] else ""
+            )
+            for row in rows
+        ]
+    except Exception as e:
+        print(f"[SEARCH CONTACTS] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 
 # --- ENDPOINT GET CONTACTS LIST ---
@@ -894,27 +939,113 @@ async def get_product_stats():
 @app.post("/api/v1/products", response_model=ProductDetailResponse)
 async def create_product(data: ProductCreateInput):
     """
-    Create a new product.
+    Create a new product with auto-generated SKU and initial stock.
+    Price is treated as cost/purchase price (harga beli), same as buy flow.
     """
     try:
+        # Auto-generate SKU if not provided
+        sku = data.sku
+        if not sku:
+            sku = await generate_sku(
+                database,
+                name=data.name,
+                variant=data.variant,
+                unit=data.base_unit or "pcs",
+                category=data.category
+            )
+
+        initial_stock = data.initial_stock or 0
+        unit_price = float(data.unit_price or 0)
+
+        # In the buy flow, price goes to average_cost (harga modal), NOT latest_selling_price
         query = """
-            INSERT INTO products (name, sku, current_stock, base_unit, category, variant, latest_selling_price)
-            VALUES (:name, :sku, 0, :base_unit, :category, :variant, :latest_selling_price)
+            INSERT INTO products (name, sku, current_stock, base_unit, category, variant, average_cost)
+            VALUES (:name, :sku, :current_stock, :base_unit, :category, :variant, :average_cost)
             RETURNING id, name, sku, current_stock, base_unit, latest_selling_price, variant, category, average_cost, created_at, updated_at
         """
         values = {
             "name": data.name,
-            "sku": data.sku,
+            "sku": sku,
+            "current_stock": initial_stock,
             "base_unit": data.base_unit or "pcs",
             "category": data.category,
             "variant": data.variant,
-            "latest_selling_price": data.latest_selling_price or 0
+            "average_cost": unit_price
         }
         
         row = await database.fetch_one(query=query, values=values)
+        product_id = str(row["id"])
+
+        # Create stock_ledger entry if initial stock > 0
+        if initial_stock > 0:
+            contact_id = None
+            if data.supplier_name:
+                contact_id = await upsert_contact(
+                    database, data.supplier_name, data.supplier_phone, None
+                )
+            
+            trans_id = str(uuid.uuid4())
+            invoice_num = generate_invoice_number()
+
+            # PERBAIKAN BUG HARGA: 
+            # Total murni didapat dari 'total_price' jikalau frontend mengirim. Jika tidak, gunakan fallback.
+            # Harga satuan eksak = Total Murni / Stok.
+            total_amount = data.total_price if data.total_price is not None else (unit_price * initial_stock)
+            exact_unit_price = (total_amount / initial_stock) if initial_stock > 0 else unit_price
+            
+            if contact_id:
+                trans_query = """
+                    INSERT INTO transactions (id, type, contact_id, transaction_date, invoice_number, total_amount, payment_method, input_source, created_at, updated_at)
+                    VALUES (CAST(:id AS uuid), 'IN', CAST(:contact_id AS uuid), NOW(), :invoice, :total, 'CASH', 'FORM', NOW(), NOW())
+                """
+                await database.execute(query=trans_query, values={
+                    "id": trans_id,
+                    "contact_id": contact_id,
+                    "invoice": invoice_num,
+                    "total": total_amount
+                })
+            else:
+                 trans_query = """
+                    INSERT INTO transactions (id, type, transaction_date, invoice_number, total_amount, payment_method, input_source, created_at, updated_at)
+                    VALUES (CAST(:id AS uuid), 'IN', NOW(), :invoice, :total, 'CASH', 'FORM', NOW(), NOW())
+                """
+                 await database.execute(query=trans_query, values={
+                    "id": trans_id,
+                    "invoice": invoice_num,
+                    "total": total_amount
+                })
+            
+            transaction_id = trans_id
+
+            # Create transaction item — subtotal dihitung otomatis oleh PostgreSQL (GENERATED ALWAYS = input_qty * input_price)
+            ti_query = """
+                INSERT INTO transaction_items (id, transaction_id, product_id, input_qty, input_unit, input_price, conversion_rate, cost_price_at_moment, created_at)
+                VALUES (CAST(:id AS uuid), CAST(:trans_id AS uuid), CAST(:prod_id AS uuid), :qty, :unit, :price, 1, :cost, NOW())
+            """
+            await database.execute(query=ti_query, values={
+                "id": str(uuid.uuid4()),
+                "trans_id": trans_id,
+                "prod_id": product_id,
+                "qty": initial_stock,
+                "unit": data.base_unit or "pcs",
+                "price": exact_unit_price,  # Harga persatuan murni (cth: 8333.333)
+                "cost": exact_unit_price,   # Cost harga pokok murni saat ini
+            })
+
+            # Create stock_ledger entry linked to transaction
+            ledger_query = """
+                INSERT INTO stock_ledger (product_id, transaction_id, date, type, qty_change, stock_after, notes)
+                VALUES (CAST(:product_id AS uuid), CAST(:transaction_id AS uuid), NOW(), 'IN', :qty_change, :stock_after, 'Stok awal')
+            """
+            await database.execute(query=ledger_query, values={
+                "product_id": product_id,
+                "transaction_id": transaction_id,
+                "qty_change": initial_stock,
+                "stock_after": initial_stock
+            })
         
         return ProductDetailResponse(
-            id=str(row["id"]),
+            id=product_id,
             name=row["name"],
             sku=row["sku"],
             stock=float(row["current_stock"] or 0),
@@ -924,7 +1055,7 @@ async def create_product(data: ProductCreateInput):
             category=row["category"],
             variant=row["variant"],
             average_cost=float(row["average_cost"] or 0),
-            cost_per_pcs=None,
+            cost_per_pcs=unit_price if unit_price > 0 else None,
             needs_recalculation=False,
             created_at=str(row["created_at"]) if row["created_at"] else None,
             updated_at=str(row["updated_at"]) if row["updated_at"] else None
@@ -1040,6 +1171,75 @@ async def get_inventory_ledger(limit: int = 50, offset: int = 0):
         import traceback
         traceback.print_exc()
         return []
+
+# --- ENDPOINT DELETE PRODUCT ---
+@app.delete("/api/v1/products/{product_id}")
+async def delete_product(product_id: str):
+    """
+    Delete a product and all its history safely.
+    It removes associated stock_ledger and transaction_items first.
+    Then cleans up any empty transactions before deleting the product.
+    """
+    try:
+        async with database.transaction():
+            # 1. Check if product exists
+            product = await database.fetch_one(
+                "SELECT id FROM products WHERE id = CAST(:id AS uuid)",
+                {"id": product_id}
+            )
+            if not product:
+                raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+
+            # 2. Find all transactions associated with this product
+            query_find_tx = """
+                SELECT DISTINCT transaction_id 
+                FROM transaction_items 
+                WHERE product_id = CAST(:id AS uuid) AND transaction_id IS NOT NULL
+            """
+            tx_rows = await database.fetch_all(query_find_tx, {"id": product_id})
+            tx_ids = [str(row["transaction_id"]) for row in tx_rows]
+
+            # 3. Delete from stock_ledger
+            await database.execute(
+                "DELETE FROM stock_ledger WHERE product_id = CAST(:id AS uuid)",
+                {"id": product_id}
+            )
+
+            # 4. Delete from transaction_items
+            await database.execute(
+                "DELETE FROM transaction_items WHERE product_id = CAST(:id AS uuid)",
+                {"id": product_id}
+            )
+
+            # 5. Clean up orphaned transactions (transactions that now have 0 items)
+            if tx_ids:
+                for tid in tx_ids:
+                    # Check how many items left in this transaction
+                    count = await database.fetch_val(
+                        "SELECT COUNT(id) FROM transaction_items WHERE transaction_id = CAST(:tid AS uuid)",
+                        {"tid": tid}
+                    )
+                    if count == 0:
+                        # Transaction is empty, delete it
+                        await database.execute(
+                            "DELETE FROM transactions WHERE id = CAST(:tid AS uuid)",
+                            {"tid": tid}
+                        )
+
+            # 6. Finally delete the product itself
+            await database.execute(
+                "DELETE FROM products WHERE id = CAST(:id AS uuid)",
+                {"id": product_id}
+            )
+
+        return {"success": True, "message": "Produk berhasil dihapus"}
+        
+    except Exception as e:
+        print(f"[DELETE PRODUCT] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # --- ENDPOINT UPDATE PRODUCT ---
 @app.put("/api/v1/products/{product_id}", response_model=ProductDetailResponse)

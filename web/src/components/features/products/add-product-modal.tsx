@@ -58,19 +58,19 @@ export function AddProductModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+      <div className="bg-white dark:bg-app-surface rounded-3xl dark:border dark:border-white/5 w-full max-w-lg overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/20">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 text-blue-600 rounded-xl">
+            <div className="p-2 bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl">
               <PackagePlus size={20} />
             </div>
-            <h2 className="text-lg font-bold text-app-text">
+            <h2 className="text-lg font-bold text-app-text dark:text-white">
               Tambah Produk Baru
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+            className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
           >
             <X size={20} />
           </button>
@@ -81,13 +81,13 @@ export function AddProductModal({
           className="p-6 flex flex-col gap-4 max-h-[70vh] overflow-y-auto"
         >
           <div>
-            <label className="block text-sm font-medium text-app-text mb-1.5">
+            <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
               Nama Produk <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               required
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               placeholder="Contoh: Indomie Goreng"
               value={formData.name}
               onChange={(e) =>
@@ -98,12 +98,12 @@ export function AddProductModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-app-text mb-1.5">
+              <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
                 SKU / Kode Produk
               </label>
               <input
                 type="text"
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all uppercase"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all uppercase"
                 placeholder="Contoh: IDM-GRG-01"
                 value={formData.sku || ""}
                 onChange={(e) =>
@@ -115,12 +115,12 @@ export function AddProductModal({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-app-text mb-1.5">
+              <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
                 Varian
               </label>
               <input
                 type="text"
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                 placeholder="Contoh: Pedas, Ori"
                 value={formData.variant || ""}
                 onChange={(e) =>
@@ -132,12 +132,12 @@ export function AddProductModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-app-text mb-1.5">
+              <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
                 Kategori
               </label>
               <input
                 type="text"
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all uppercase"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all uppercase"
                 placeholder="Contoh: MAKANAN"
                 value={formData.category || ""}
                 onChange={(e) =>
@@ -149,12 +149,12 @@ export function AddProductModal({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-app-text mb-1.5">
+              <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
                 Satuan Dasar <span className="text-red-500">*</span>
               </label>
               <select
                 required
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
                 value={formData.base_unit || "pcs"}
                 onChange={(e) =>
                   setFormData({ ...formData, base_unit: e.target.value })
@@ -172,7 +172,7 @@ export function AddProductModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-app-text mb-1.5">
+            <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
               Harga Jual Default <span className="text-red-500">*</span>
             </label>
             <div className="relative">
@@ -183,7 +183,7 @@ export function AddProductModal({
                 type="text"
                 inputMode="numeric"
                 required
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium"
                 placeholder="0"
                 value={
                   formData.latest_selling_price
@@ -199,22 +199,22 @@ export function AddProductModal({
             </p>
           </div>
 
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mt-2">
-            <h4 className="text-sm font-semibold text-blue-800 mb-1">
+          <div className="bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 rounded-xl p-4 mt-2">
+            <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-400 mb-1">
               Catatan Stok Awal
             </h4>
-            <p className="text-xs text-blue-600/80 leading-relaxed">
+            <p className="text-xs text-blue-600 dark:text-blue-400/80 dark:text-blue-400/80 leading-relaxed">
               Produk baru yang dibuat akan memiliki stok 0. Untuk menambahkan
               stok awal, silakan gunakan fitur "Tambah Stok" setelah produk
               berhasil dibuat.
             </p>
           </div>
 
-          <div className="flex gap-3 justify-end mt-2 pt-4 border-t border-gray-100">
+          <div className="flex gap-3 justify-end mt-2 pt-4 border-t border-gray-100 dark:border-white/5">
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+              className="px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 rounded-xl transition-colors"
             >
               Batal
             </button>

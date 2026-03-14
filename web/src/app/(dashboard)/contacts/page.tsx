@@ -77,10 +77,10 @@ export default function ContactsPage() {
       {/* Header & Stats Row */}
       <div className="flex flex-col xl:flex-row gap-6">
         <div className="xl:w-1/3 flex flex-col justify-end pb-2">
-          <h1 className="text-2xl font-bold text-app-text mb-2">
+          <h1 className="text-2xl font-bold text-app-text dark:text-white mb-2">
             Manajemen Kontak
           </h1>
-          <p className="text-sm text-app-muted">
+          <p className="text-sm text-app-muted dark:text-gray-400">
             Kelola daftar pelanggan dan supplier Anda di sini.
           </p>
         </div>
@@ -90,19 +90,19 @@ export default function ContactsPage() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex flex-col flex-1 bg-white/50 rounded-3xl p-6 shadow-sm border border-gray-100 min-h-[500px]">
+      <div className="flex flex-col flex-1 bg-white/50 dark:bg-app-surface rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-white/5 min-h-[500px]">
         {/* Toolbar: Tabs & Search */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           {/* Tabs */}
-          <div className="flex p-1 bg-gray-100 rounded-xl">
+          <div className="flex p-1 bg-gray-100 dark:bg-black/20 rounded-xl">
             {(["ALL", "CUSTOMER", "SUPPLIER"] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
                   activeTab === tab
-                    ? "bg-white text-app-text shadow-sm"
-                    : "text-gray-500 hover:text-app-text"
+                    ? "bg-white dark:bg-app-surface text-app-text dark:text-white shadow-sm"
+                    : "text-gray-500 hover:text-app-text dark:text-gray-400 dark:hover:text-white"
                 }`}
               >
                 {tab === "ALL"
@@ -125,13 +125,13 @@ export default function ContactsPage() {
                 placeholder="Cari nama atau no. telepon..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
               />
             </div>
 
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="px-4 py-2.5 bg-app-text text-white rounded-xl text-sm font-medium hover:bg-black transition-colors flex items-center gap-2 drop-shadow-sm whitespace-nowrap"
+              className="px-4 py-2.5 bg-app-text text-white dark:bg-blue-600 dark:hover:bg-blue-700 rounded-xl text-sm font-medium hover:bg-black transition-colors flex items-center gap-2 drop-shadow-sm whitespace-nowrap"
             >
               <Plus size={16} />
               <span className="hidden sm:inline">Tambah Kontak</span>

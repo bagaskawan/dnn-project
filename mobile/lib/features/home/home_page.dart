@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/colors.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../features/buy/buy_page.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import '../../features/buy/buy_ai_page.dart';
+import '../../features/buy/buy_scan_ocr_page.dart';
 import '../../features/sale/sale_page.dart';
+import '../../features/sale/form-sale/sale_form_page.dart';
 import '../../features/transaction/detail-transaction/transaction_detail_page.dart';
 import 'home_view_model.dart';
 
@@ -28,6 +32,7 @@ class HomeContent extends StatefulWidget {
 
 class _HomeContentState extends State<HomeContent> {
   final HomeViewModel _viewModel = HomeViewModel();
+  final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void initState() {
@@ -186,10 +191,7 @@ class _HomeContentState extends State<HomeContent> {
         Expanded(
           child: ElevatedButton(
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const BuyPage()),
-              );
+              _showBuyOptions(context);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.boxSecondBack,
@@ -232,10 +234,7 @@ class _HomeContentState extends State<HomeContent> {
         Expanded(
           child: ElevatedButton(
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SalePage()),
-              );
+              _showSaleOptions(context);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.boxThird,
@@ -274,6 +273,279 @@ class _HomeContentState extends State<HomeContent> {
           ),
         ),
       ],
+    );
+  }
+
+  void _showBuyOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Buat Pengadaan',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.boxSecondBack.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.chat_bubble_outline,
+                      color: AppColors.boxSecondBack,
+                    ),
+                  ),
+                  title: Text(
+                    'Chat AI',
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Catat belanja dengan obrolan AI',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const BuyAiPage(),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.boxSecondBack.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.document_scanner_outlined,
+                      color: AppColors.boxSecondBack,
+                    ),
+                  ),
+                  title: Text(
+                    'Scan OCR',
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Catat belanja dengan pindai struk/nota otomatis',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    // Show secondary modal for image source
+                    // Use the root navigator context from the State (not the bottom sheet context)
+                    final rootNavigator = Navigator.of(this.context);
+                    showModalBottomSheet(
+                      context: this.context,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(24),
+                        ),
+                      ),
+                      builder: (sheetContext) {
+                        return SafeArea(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ListTile(
+                                  leading: const Icon(
+                                    Icons.camera_alt,
+                                    color: AppColors.boxSecondBack,
+                                  ),
+                                  title: Text(
+                                    'Ambil Foto',
+                                    style: GoogleFonts.montserrat(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  onTap: () async {
+                                    Navigator.pop(sheetContext);
+                                    final XFile? image = await _imagePicker
+                                        .pickImage(source: ImageSource.camera);
+                                    if (image != null && mounted) {
+                                      rootNavigator.push(
+                                        MaterialPageRoute(
+                                          builder: (context) => BuyScanOcrPage(
+                                            initialImage: File(image.path),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                ),
+                                ListTile(
+                                  leading: const Icon(
+                                    Icons.photo_library,
+                                    color: AppColors.boxSecondBack,
+                                  ),
+                                  title: Text(
+                                    'Pilih dari Galeri',
+                                    style: GoogleFonts.montserrat(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  onTap: () async {
+                                    Navigator.pop(sheetContext);
+                                    final XFile? image = await _imagePicker
+                                        .pickImage(source: ImageSource.gallery);
+                                    if (image != null && mounted) {
+                                      rootNavigator.push(
+                                        MaterialPageRoute(
+                                          builder: (context) => BuyScanOcrPage(
+                                            initialImage: File(image.path),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showSaleOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Buat Penjualan',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.boxThird.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.chat_bubble_outline,
+                      color: AppColors.boxThird,
+                    ),
+                  ),
+                  title: Text(
+                    'Chat AI',
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Catat penjualan dengan obrolan AI',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const SalePage()),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.boxThird.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.list_alt_outlined,
+                      color: AppColors.boxThird,
+                    ),
+                  ),
+                  title: Text(
+                    'Form Barang',
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Catat penjualan secara manual',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SaleFormPage(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

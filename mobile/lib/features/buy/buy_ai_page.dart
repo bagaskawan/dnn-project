@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
+
 import 'dart:io';
 import '../../core/constants/colors.dart';
 import '../../core/services/api_service.dart';
@@ -9,17 +9,17 @@ import '../../models/procurement_draft.dart';
 import '../../shared/widgets/main_shell.dart'; // For navigation after save
 import 'dart:async'; // For debounce
 
-class BuyPage extends StatefulWidget {
-  const BuyPage({super.key});
+class BuyAiPage extends StatefulWidget {
+  const BuyAiPage({super.key});
 
   @override
-  State<BuyPage> createState() => _BuyPageState();
+  State<BuyAiPage> createState() => _BuyAiPageState();
 }
 
-class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
+class _BuyAiPageState extends State<BuyAiPage> with TickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final ImagePicker _imagePicker = ImagePicker(); // Keep one instance
+
   final ApiService _apiService = ApiService();
 
   // Store current draft for accumulating items
@@ -402,82 +402,6 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
         _sendMessage(customText: itemText);
       });
     }
-  }
-
-  void _showImagePickerOptions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Icon(
-                    Icons.camera_alt,
-                    color: AppColors.primary,
-                  ),
-                  title: Text(
-                    'Ambil Foto',
-                    style: GoogleFonts.montserrat(fontWeight: FontWeight.w500),
-                  ),
-                  onTap: () async {
-                    Navigator.pop(context);
-                    final XFile? image = await _imagePicker.pickImage(
-                      source: ImageSource.camera,
-                    );
-                    if (image != null) {
-                      _processImage(File(image.path));
-                    }
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(
-                    Icons.photo_library,
-                    color: AppColors.primary,
-                  ),
-                  title: Text(
-                    'Pilih dari Galeri',
-                    style: GoogleFonts.montserrat(fontWeight: FontWeight.w500),
-                  ),
-                  onTap: () async {
-                    Navigator.pop(context);
-                    final XFile? image = await _imagePicker.pickImage(
-                      source: ImageSource.gallery,
-                    );
-                    if (image != null) {
-                      _processImage(File(image.path));
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _processImage(File imageFile) async {
-    setState(() {
-      _chatItems.removeWhere((item) => item['type'] == 'action_buttons');
-      _chatItems.add({"type": "user_image", "imagePath": imageFile.path});
-      // Custom loading message for image analysis
-      _chatItems.add({
-        "type": "system_text",
-        "text": "⏳ Mohon tunggu ya Kak, sistem sedang menganalisis gambar...",
-      });
-      _chatItems.add({"type": "typing"});
-    });
-    _scrollToBottom();
-
-    final draft = await _apiService.parseImage(imageFile, _currentDraft);
-    _handleApiResponse(draft);
   }
 
   void _showEditListBottomSheet() {
@@ -2024,7 +1948,7 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
                 children: [
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 0, 16),
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
                       child: TextField(
                         controller: _messageController,
                         maxLines: 5,
@@ -2048,26 +1972,6 @@ class _BuyPageState extends State<BuyPage> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: _showImagePickerOptions,
-                        borderRadius: BorderRadius.circular(20),
-                        child: Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: Icon(
-                            Icons.camera_alt_outlined,
-                            color: Colors.grey.shade400,
-                            size: 24,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
                 ],
               ),
             ),

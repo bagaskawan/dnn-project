@@ -52,12 +52,12 @@ export function EditContactModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
-          <h2 className="text-lg font-bold text-app-text">Edit Kontak</h2>
+      <div className="bg-white dark:bg-app-surface rounded-3xl dark:border dark:border-white/5 w-full max-w-md overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/20">
+          <h2 className="text-lg font-bold text-app-text dark:text-white">Edit Kontak</h2>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+            className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
           >
             <X size={20} />
           </button>
@@ -65,13 +65,13 @@ export function EditContactModal({
 
         <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4">
           <div>
-            <label className="block text-sm font-medium text-app-text mb-1.5">
+            <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
               Nama Lengkap <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               required
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               placeholder="Masukkan nama kontak"
               value={formData.name}
               onChange={(e) =>
@@ -81,7 +81,7 @@ export function EditContactModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-app-text mb-1.5">
+            <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
               Tipe Kontak
             </label>
             <div className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed flex items-center">
@@ -93,12 +93,12 @@ export function EditContactModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-app-text mb-1.5">
+            <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
               No. Telepon / WhatsApp
             </label>
             <input
               type="text"
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               placeholder="Contoh: 08123456789"
               value={formData.phone || ""}
               onChange={(e) =>
@@ -108,11 +108,11 @@ export function EditContactModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-app-text mb-1.5">
+            <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
               Alamat
             </label>
             <textarea
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
               placeholder="Masukkan alamat lengkap"
               rows={3}
               value={formData.address || ""}
@@ -126,7 +126,7 @@ export function EditContactModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+              className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 rounded-xl transition-colors"
             >
               Batal
             </button>

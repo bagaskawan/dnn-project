@@ -55,39 +55,41 @@ export default function FinancialPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-app-text mb-1">Keuangan</h1>
-          <p className="text-sm text-app-muted">
+          <h1 className="text-2xl font-bold text-app-text dark:text-white mb-1">
+            Keuangan
+          </h1>
+          <p className="text-sm text-app-muted dark:text-gray-400">
             Pantau arus kas, pendapatan, dan laba rugi bisnis Anda.
           </p>
         </div>
 
-        <button className="px-4 py-2 bg-white text-app-text border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 drop-shadow-sm">
+        <button className="px-4 py-2 bg-white dark:bg-app-surface text-app-text dark:text-gray-100 border border-gray-200 dark:border-white/10 rounded-xl text-sm font-medium hover:bg-gray-50 dark:hover:bg-white/5 transition-colors flex items-center justify-center gap-2 drop-shadow-sm">
           <Download size={16} />
           <span>Export Laporan</span>
         </button>
       </div>
 
       {/* Toolbar / Filters */}
-      <div className="bg-white/50 rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="bg-white/50 dark:bg-app-surface rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-white/5 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-          <span className="text-sm font-medium text-app-muted mr-2 flex items-center gap-1">
+          <span className="text-sm font-medium text-app-muted dark:text-gray-400 mr-2 flex items-center gap-1">
             <Calendar size={14} /> Cepat:
           </span>
           <button
             onClick={() => handleQuickFilter(7)}
-            className="px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-blue-100 hover:text-blue-700 rounded-lg whitespace-nowrap transition-colors"
+            className="px-3 py-1.5 text-xs font-medium bg-gray-100 dark:bg-black/20 dark:text-white hover:bg-blue-100 dark:hover:bg-blue-500/10 hover:text-blue-700 dark:hover:text-blue-400 rounded-lg whitespace-nowrap transition-colors"
           >
             7 Hari
           </button>
           <button
             onClick={() => handleQuickFilter(30)}
-            className="px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-blue-100 hover:text-blue-700 rounded-lg whitespace-nowrap transition-colors"
+            className="px-3 py-1.5 text-xs font-medium bg-gray-100 dark:bg-black/20 dark:text-white hover:bg-blue-100 dark:hover:bg-blue-500/10 hover:text-blue-700 dark:hover:text-blue-400 rounded-lg whitespace-nowrap transition-colors"
           >
             30 Hari
           </button>
           <button
             onClick={() => setFilters({ date_from: "", date_to: "" })}
-            className="px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-blue-100 hover:text-blue-700 rounded-lg whitespace-nowrap transition-colors"
+            className="px-3 py-1.5 text-xs font-medium bg-gray-100 dark:bg-black/20 dark:text-white hover:bg-blue-100 dark:hover:bg-blue-500/10 hover:text-blue-700 dark:hover:text-blue-400 rounded-lg whitespace-nowrap transition-colors"
           >
             Semua
           </button>
@@ -98,14 +100,14 @@ export default function FinancialPage() {
             type="date"
             value={filters.date_from || ""}
             onChange={(e) => handleFilterChange("date_from", e.target.value)}
-            className="flex-1 md:w-36 px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
+            className="flex-1 md:w-36 px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
           />
           <span className="text-gray-400">-</span>
           <input
             type="date"
             value={filters.date_to || ""}
             onChange={(e) => handleFilterChange("date_to", e.target.value)}
-            className="flex-1 md:w-36 px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
+            className="flex-1 md:w-36 px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
           />
         </div>
       </div>
@@ -123,20 +125,20 @@ export default function FinancialPage() {
 
         {/* Placeholder for future charts / cash flow */}
         <div className="lg:col-span-1 flex flex-col gap-6">
-          <div className="bg-white/50 rounded-3xl p-6 shadow-sm border border-gray-100 flex-1 flex flex-col items-center justify-center text-center opacity-70">
-            <h3 className="text-lg font-bold text-app-text mb-2">
+          <div className="bg-white/50 dark:bg-app-surface rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-white/5 flex-1 flex flex-col items-center justify-center text-center opacity-70">
+            <h3 className="text-lg font-bold text-app-text dark:text-white mb-2">
               Arus Kas (Cash Flow)
             </h3>
-            <p className="text-sm text-app-muted max-w-xs">
+            <p className="text-sm text-app-muted dark:text-gray-400 max-w-xs">
               Fitur grafik arus kas masuk/keluar harian sedang dalam
               pengembangan.
             </p>
           </div>
-          <div className="bg-white/50 rounded-3xl p-6 shadow-sm border border-gray-100 h-48 flex flex-col items-center justify-center text-center opacity-70">
-            <h3 className="text-lg font-bold text-app-text mb-2">
+          <div className="bg-white/50 dark:bg-app-surface rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-white/5 h-48 flex flex-col items-center justify-center text-center opacity-70">
+            <h3 className="text-lg font-bold text-app-text dark:text-white mb-2">
               Hutang / Piutang
             </h3>
-            <p className="text-sm text-app-muted max-w-xs">
+            <p className="text-sm text-app-muted dark:text-gray-400 max-w-xs">
               Ringkasan tempo pembayaran belum tersedia.
             </p>
           </div>

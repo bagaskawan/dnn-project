@@ -10,20 +10,20 @@ interface ContactTableProps {
 
 function SkeletonRow() {
   return (
-    <tr className="border-b border-gray-50">
+    <tr className="border-b border-gray-50 dark:border-white/5">
       <td className="px-4 py-4">
-        <div className="h-5 bg-gray-100 rounded w-32 animate-pulse mb-1"></div>
-        <div className="h-3 bg-gray-100 rounded w-20 animate-pulse"></div>
+        <div className="h-5 bg-gray-100 dark:bg-white/10 rounded w-32 animate-pulse mb-1"></div>
+        <div className="h-3 bg-gray-100 dark:bg-white/10 rounded w-20 animate-pulse"></div>
       </td>
       <td className="px-4 py-4">
-        <div className="h-5 bg-gray-100 rounded w-20 animate-pulse"></div>
+        <div className="h-5 bg-gray-100 dark:bg-white/10 rounded w-20 animate-pulse"></div>
       </td>
       <td className="px-4 py-4">
-        <div className="h-4 bg-gray-100 rounded w-28 animate-pulse mb-1"></div>
-        <div className="h-3 bg-gray-100 rounded w-40 animate-pulse"></div>
+        <div className="h-4 bg-gray-100 dark:bg-white/10 rounded w-28 animate-pulse mb-1"></div>
+        <div className="h-3 bg-gray-100 dark:bg-white/10 rounded w-40 animate-pulse"></div>
       </td>
       <td className="px-4 py-4">
-        <div className="h-8 w-8 bg-gray-100 rounded-lg animate-pulse"></div>
+        <div className="h-8 w-8 bg-gray-100 dark:bg-white/10 rounded-lg animate-pulse"></div>
       </td>
     </tr>
   );
@@ -31,10 +31,10 @@ function SkeletonRow() {
 
 export function ContactTable({ contacts, loading, onEdit }: ContactTableProps) {
   return (
-    <div className="bg-white/50 rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col gap-4 h-full flex-1">
+    <div className="bg-white/50 dark:bg-app-surface/50 rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-white/5 flex flex-col gap-4 h-full flex-1">
       <div className="overflow-x-auto flex-1">
-        <table className="w-full text-sm text-left text-app-text">
-          <thead className="text-xs text-app-muted uppercase bg-gray-50/50 rounded-lg">
+        <table className="w-full text-sm text-left text-app-text dark:text-gray-300">
+          <thead className="text-xs text-app-muted dark:text-gray-400 uppercase bg-gray-50/50 dark:bg-black/20 rounded-lg">
             <tr>
               <th scope="col" className="px-4 py-3 rounded-l-lg">
                 Nama Kontak
@@ -69,10 +69,10 @@ export function ContactTable({ contacts, loading, onEdit }: ContactTableProps) {
               contacts.map((contact) => (
                 <tr
                   key={contact.id}
-                  className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors group"
+                  className="border-b border-gray-50 dark:border-white/5 last:border-0 hover:bg-gray-50/30 dark:hover:bg-white/5 transition-colors group"
                 >
                   <td className="px-4 py-4">
-                    <div className="font-semibold text-app-text">
+                    <div className="font-semibold text-app-text dark:text-white">
                       {contact.name || "-"}
                     </div>
                     <div className="text-xs text-app-muted">
@@ -83,8 +83,8 @@ export function ContactTable({ contacts, loading, onEdit }: ContactTableProps) {
                     <span
                       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
                         contact.type === "SUPPLIER"
-                          ? "bg-purple-100 text-purple-800"
-                          : "bg-blue-100 text-blue-800"
+                          ? "bg-purple-100 dark:bg-purple-500/10 text-purple-800 dark:text-purple-400"
+                          : "bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400"
                       }`}
                     >
                       {contact.type === "SUPPLIER" ? (
@@ -96,7 +96,9 @@ export function ContactTable({ contacts, loading, onEdit }: ContactTableProps) {
                     </span>
                   </td>
                   <td className="px-4 py-4">
-                    <div className="font-medium">{contact.phone || "-"}</div>
+                    <div className="font-medium dark:text-white">
+                      {contact.phone || "-"}
+                    </div>
                     <div className="text-xs text-app-muted line-clamp-1 max-w-xs">
                       {contact.address || "-"}
                     </div>
@@ -104,7 +106,7 @@ export function ContactTable({ contacts, loading, onEdit }: ContactTableProps) {
                   <td className="px-4 py-4 text-right">
                     <button
                       onClick={() => onEdit(contact)}
-                      className="p-2 text-app-muted hover:text-app-text hover:bg-white rounded-lg transition-colors border border-transparent hover:border-gray-200"
+                      className="p-2 text-app-muted dark:text-gray-400 hover:text-app-text dark:hover:text-white hover:bg-white dark:hover:bg-white/5 rounded-lg transition-colors border border-transparent hover:border-gray-200 dark:hover:border-white/10"
                       title="Edit Kontak"
                     >
                       <Edit2 size={16} />

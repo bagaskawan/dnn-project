@@ -102,7 +102,7 @@ export function BusinessSummary() {
         return (
           <div
             key={card.key}
-            className={`${card.color} dark:bg-app-surface dark:border dark:border-neutral-800 rounded-3xl p-5 flex flex-col justify-between h-40 relative group transition-transform hover:scale-[1.02] shadow-sm`}
+            className={`${card.color} dark:bg-app-surface dark:border dark:border-neutral-800 rounded-3xl p-5 flex flex-col justify-between h-40 relative group shadow-sm`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">

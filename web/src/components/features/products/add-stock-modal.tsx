@@ -118,19 +118,19 @@ export function AddStockModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+      <div className="bg-white dark:bg-app-surface rounded-3xl dark:border dark:border-white/5 w-full max-w-lg overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/20">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 text-blue-600 rounded-xl">
+            <div className="p-2 bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl">
               <PlusCircle size={20} />
             </div>
-            <h2 className="text-lg font-bold text-app-text">
+            <h2 className="text-lg font-bold text-app-text dark:text-white">
               Tambah Stok Barang
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+            className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
           >
             <X size={20} />
           </button>
@@ -141,7 +141,7 @@ export function AddStockModal({
           className="p-6 flex flex-col gap-4 max-h-[70vh] overflow-y-auto"
         >
           <div className="bg-gray-50 rounded-xl p-4 mb-2">
-            <div className="text-sm font-medium text-app-text mb-1">
+            <div className="text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1">
               {product.name} {product.variant ? `(${product.variant})` : ""}
             </div>
             <div className="text-xs text-gray-500">
@@ -152,7 +152,7 @@ export function AddStockModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-app-text mb-1.5">
+              <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
                 Jumlah Masuk <span className="text-red-500">*</span>
               </label>
               <div className="relative">
@@ -160,7 +160,7 @@ export function AddStockModal({
                   type="number"
                   step="0.01"
                   required
-                  className="w-full px-4 py-2.5 pr-14 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-blue-700"
+                  className="w-full px-4 py-2.5 pr-14 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-blue-700"
                   value={formData.qty || ""}
                   onChange={handleQtyChange}
                 />
@@ -171,7 +171,7 @@ export function AddStockModal({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-app-text mb-1.5">
+              <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
                 Total Harga Beli <span className="text-red-500">*</span>
               </label>
               <div className="relative">
@@ -182,7 +182,7 @@ export function AddStockModal({
                   type="text"
                   inputMode="numeric"
                   required
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-medium"
                   value={
                     formData.total_buy_price
                       ? formData.total_buy_price.toLocaleString("id-ID")
@@ -206,12 +206,12 @@ export function AddStockModal({
           )}
 
           <div>
-            <label className="block text-sm font-medium text-app-text mb-1.5">
+            <label className="block text-sm font-medium text-app-text dark:text-white dark:text-gray-200 mb-1.5">
               Data Supplier <span className="text-red-500">*</span>
             </label>
             <select
               required
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
               value={
                 formData.supplier_name === "Baru"
                   ? "NEW"
@@ -235,13 +235,13 @@ export function AddStockModal({
           {formData.supplier_name === "Baru" && (
             <div className="grid grid-cols-2 gap-4 mt-2 p-4 bg-gray-50 border border-gray-100 rounded-xl">
               <div>
-                <label className="block text-xs font-medium text-app-text mb-1.5">
+                <label className="block text-xs font-medium text-app-text dark:text-white mb-1.5">
                   Nama Supplier Baru <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm"
                   placeholder="Nama supplier"
                   value={
                     formData.supplier_name === "Baru"
@@ -254,12 +254,12 @@ export function AddStockModal({
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-app-text mb-1.5">
+                <label className="block text-xs font-medium text-app-text dark:text-white mb-1.5">
                   No. HP / WA
                 </label>
                 <input
                   type="text"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm"
                   placeholder="Opsional"
                   value={formData.supplier_phone || ""}
                   onChange={(e) =>
@@ -270,11 +270,11 @@ export function AddStockModal({
             </div>
           )}
 
-          <div className="flex gap-3 justify-end mt-4 pt-4 border-t border-gray-100">
+          <div className="flex gap-3 justify-end mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+              className="px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 rounded-xl transition-colors"
             >
               Batal
             </button>

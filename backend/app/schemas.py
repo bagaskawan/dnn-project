@@ -220,7 +220,11 @@ class ProductCreateInput(BaseModel):
     base_unit: Optional[str] = "pcs"
     category: Optional[str] = None
     variant: Optional[str] = None
-    latest_selling_price: Optional[float] = 0
+    unit_price: Optional[float] = 0  # Harga beli per unit (cost price)
+    total_price: Optional[float] = None # Uang murni yang dibayar di form (Mencegah eror pembulatan harga satuan)
+    initial_stock: Optional[float] = 0
+    supplier_name: Optional[str] = None
+    supplier_phone: Optional[str] = None
 
 class ProductStats(BaseModel):
     total: int

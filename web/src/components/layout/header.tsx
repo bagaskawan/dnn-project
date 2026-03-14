@@ -25,7 +25,7 @@ export function Header() {
   }, []);
 
   return (
-    <header className="flex items-center justify-between px-8 py-4 bg-app-surface border-b border-app-surface shadow-sm rounded-t-[32px] mx-4 mt-4">
+    <header className="flex items-center justify-between px-8 py-4 border-b border-app-surface shadow-sm rounded-t-[32px] mx-4 mt-4">
       {/* Brand */}
       <div className="flex items-center gap-2">
         <span className="font-semibold text-xl tracking-tight text-app-text">
@@ -45,7 +45,7 @@ export function Header() {
               href={item.href}
               className={`px-6 py-2 rounded-full text-sm font-medium transition-colors ${
                 isActive
-                  ? "bg-white dark:bg-[#2d2d2d] text-app-text shadow-sm"
+                  ? "bg-white dark:bg-[#474747] text-app-text shadow-sm"
                   : "text-app-muted hover:text-app-text hover:bg-white/50 dark:hover:bg-[#2d2d2d]/50"
               }`}
             >
