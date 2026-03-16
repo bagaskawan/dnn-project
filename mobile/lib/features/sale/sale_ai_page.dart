@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/colors.dart';
-import 'form-sale/sale_form_page.dart';
+import 'sale_form_page.dart';
 import '../../core/services/api_service.dart';
 import '../../models/sale_draft.dart';
 import '../../models/procurement_draft.dart';
 
-class SalePage extends StatefulWidget {
-  const SalePage({super.key});
+class SaleAiPage extends StatefulWidget {
+  const SaleAiPage({super.key});
 
   @override
-  State<SalePage> createState() => _SalePageState();
+  State<SaleAiPage> createState() => _SaleAiPageState();
 }
 
-class _SalePageState extends State<SalePage> {
+class _SaleAiPageState extends State<SaleAiPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ApiService _apiService = ApiService();

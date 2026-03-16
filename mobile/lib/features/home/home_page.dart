@@ -5,8 +5,8 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../../features/buy/buy_ai_page.dart';
 import '../../features/buy/buy_scan_ocr_page.dart';
-import '../../features/sale/sale_page.dart';
-import '../../features/sale/form-sale/sale_form_page.dart';
+import '../../features/sale/sale_ai_page.dart';
+import '../../features/sale/sale_form_page.dart';
 import '../../features/transaction/detail-transaction/transaction_detail_page.dart';
 import 'home_view_model.dart';
 
@@ -500,7 +500,7 @@ class _HomeContentState extends State<HomeContent> {
                     Navigator.pop(context);
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const SalePage()),
+                      MaterialPageRoute(builder: (context) => const SaleAiPage()),
                     );
                   },
                 ),
